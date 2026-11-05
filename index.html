@@ -1,0 +1,1707 @@
+<title>Bluff Pot</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<style>
+/* Layout: oval felt table, AI opponents along the top arc, human seat fixed at the bottom,
+   pot centered, action bar docked above the safe area for thumb reach on phones. */
+:root{
+  --felt:#0f5132; --felt-2:#0b3b25; --felt-line:rgba(255,255,255,.14);
+  --bg:#f3efe6; --fg:#1b1410; --muted:#6b5d52; --card-bg:#fffaf2; --card-ink:#1b1410;
+  --accent:#d9a441; --accent-ink:#2a1a05;
+  --good:#3f8f5f; --bad:#b4483a; --panel:#ffffff; --panel-line:#e4dccd;
+  --suit-red:#b23a2e; --suit-black:#20201e;
+}
+@media (prefers-color-scheme: dark){ :root:not([data-theme="light"]){
+  --felt:#0b3b25; --felt-2:#062718; --felt-line:rgba(255,255,255,.10);
+  --bg:#15120f; --fg:#f1e9dd; --muted:#a79b8c; --card-bg:#faf4e8; --card-ink:#1b1410;
+  --accent:#e3b55a; --accent-ink:#2a1a05;
+  --good:#4fae77; --bad:#d16455; --panel:#1f1a15; --panel-line:#352c23;
+  --suit-red:#d9574a; --suit-black:#20201e;
+  color-scheme: dark;
+}}
+:root[data-theme="dark"]{
+  --felt:#0b3b25; --felt-2:#062718; --felt-line:rgba(255,255,255,.10);
+  --bg:#15120f; --fg:#f1e9dd; --muted:#a79b8c; --card-bg:#faf4e8; --card-ink:#1b1410;
+  --accent:#e3b55a; --accent-ink:#2a1a05;
+  --good:#4fae77; --bad:#d16455; --panel:#1f1a15; --panel-line:#352c23;
+  --suit-red:#d9574a; --suit-black:#20201e;
+  color-scheme: dark;
+}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--fg);font-family:"IBM Plex Sans",system-ui,sans-serif;
+  padding-left:max(16px, env(safe-area-inset-left,0px)); padding-right:max(16px, env(safe-area-inset-right,0px));}
+h1,h2,.display{font-family:"Fraunces",Georgia,serif;}
+.tabular{font-family:"IBM Plex Mono",ui-monospace,monospace; font-variant-numeric:tabular-nums;}
+.wrap{max-width:720px;margin:0 auto;padding-block:16px 100px;}
+
+/* ---------- Top bar ---------- */
+.topbar{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px;}
+.title-block{display:flex;flex-direction:column;gap:2px;}
+.topbar h1{font-size:1.5rem;font-weight:600;margin:0;}
+.tagline{color:var(--muted);font-size:.74rem;}
+.balance{display:flex;align-items:center;gap:8px;background:var(--panel);border:1px solid var(--panel-line);
+  border-radius:999px;padding:6px 14px;font-size:1rem;}
+.balance b{font-size:1.1rem;color:var(--accent-ink);background:var(--accent);border-radius:999px;padding:1px 10px;}
+
+/* ---------- Setup screen ---------- */
+.card{background:var(--panel);border:1px solid var(--panel-line);border-radius:16px;padding:20px;}
+.setup p.lede{color:var(--muted);margin-top:0;max-width:52ch;}
+fieldset{border:0;padding:0;margin:0 0 18px;}
+legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
+.choice-row{display:flex;gap:8px;flex-wrap:wrap;}
+.choice{border:1.5px solid var(--panel-line);background:transparent;color:var(--fg);border-radius:10px;
+  padding:10px 14px;font-size:.95rem;cursor:pointer;min-width:84px;text-align:center;}
+.choice[aria-pressed="true"]{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 18%, transparent);font-weight:600;}
+.choice:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+.primary{background:var(--accent);color:var(--accent-ink);border:none;border-radius:12px;font-weight:700;
+  font-size:1.05rem;padding:14px 22px;cursor:pointer;width:100%;}
+.primary:focus-visible{outline:2px solid var(--fg);outline-offset:2px;}
+.note{color:var(--muted);font-size:.85rem;margin-top:14px;}
+.name-input{display:block;width:100%;padding:10px 12px;border:1.5px solid var(--panel-line);border-radius:10px;
+  background:transparent;color:var(--fg);font-size:.95rem;margin-bottom:8px;}
+.name-input:focus-visible{outline:2px solid var(--accent);outline-offset:2px;}
+
+/* ---------- Table ---------- */
+.table-wrap{display:none;}
+.table-wrap.active{display:block;}
+.felt{position:relative;background:
+   radial-gradient(120% 90% at 50% 10%, var(--felt) 0%, var(--felt-2) 72%);
+   border:10px solid color-mix(in srgb, var(--felt-2) 70%, #000 20%);
+   border-radius:28px;padding:18px 12px 150px;min-height:420px;overflow:hidden;}
+.felt::before{content:"";position:absolute;inset:14px;border:1px solid var(--felt-line);border-radius:20px;pointer-events:none;}
+
+.opponents{display:flex;justify-content:center;gap:10px;flex-wrap:wrap;margin-bottom:28px;position:relative;z-index:1;}
+.seat{background:rgba(0,0,0,.22);border:1px solid var(--felt-line);border-radius:14px;padding:10px;min-width:104px;text-align:center;color:#fff;}
+.seat .name{font-size:.78rem;opacity:.85;margin-bottom:4px;}
+.seat .chips{font-size:.95rem;font-weight:600;margin-bottom:6px;}
+.seat .cards{display:flex;justify-content:center;gap:4px;}
+.seat .status{font-size:.72rem;margin-top:6px;padding:2px 8px;border-radius:999px;display:inline-block;}
+.status.beslissen{background:rgba(255,255,255,.18);}
+.status.gepot{background:var(--good);color:#fff;}
+.status.gepast{background:rgba(0,0,0,.3);color:#e9e2d6;}
+
+.pot-area{position:relative;z-index:1;text-align:center;margin:8px 0 26px;}
+.pot-label{color:#dff0e6;font-size:.8rem;letter-spacing:.04em;text-transform:uppercase;opacity:.85;}
+.pot-amount{font-size:2.1rem;color:#fff;font-weight:700;}
+.pot-reserve{color:#dff0e6;font-size:.72rem;opacity:.75;margin-top:2px;}
+.account-bar{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-bottom:14px;font-size:.9rem;}
+.auth-status{font-size:.85rem;margin-top:10px;}
+.auth-status.error{color:#ff8a80;}
+
+.human-row{position:relative;z-index:1;display:flex;flex-direction:column;align-items:center;gap:8px;}
+.human-cards{display:flex;gap:8px;}
+.human-meta{display:flex;align-items:center;gap:10px;}
+.human-name{color:#eef6ef;font-size:.85rem;}
+.ghost.tiny{padding:4px 10px;font-size:.72rem;}
+.sitout-note{color:#eef6ef;font-size:.85rem;opacity:.8;padding:8px 0;}
+
+.pause-overlay{position:fixed;inset:0;background:rgba(6,20,13,.86);display:flex;align-items:center;justify-content:center;
+  padding:max(16px, env(safe-area-inset-top,0px)) max(16px, env(safe-area-inset-right,0px)) max(16px, env(safe-area-inset-bottom,0px)) max(16px, env(safe-area-inset-left,0px));
+  z-index:20;}
+.pause-panel{background:var(--panel);color:var(--fg);border-radius:16px;padding:22px;max-width:320px;width:100%;text-align:center;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+.pause-title{font-family:"Fraunces",Georgia,serif;font-size:1.3rem;font-weight:700;margin-bottom:6px;}
+.pause-by{color:var(--muted);font-size:.9rem;margin-bottom:4px;}
+.pause-countdown{color:var(--muted);font-size:.85rem;margin-bottom:16px;font-variant-numeric:tabular-nums;}
+
+.result-overlay{position:absolute;inset:0;background:rgba(6,20,13,.78);display:none;align-items:center;justify-content:center;padding:16px;z-index:3;border-radius:18px;}
+.result-overlay.active{display:flex;}
+.result-panel{background:var(--panel);color:var(--fg);border-radius:16px;padding:18px;max-width:360px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.4);}
+.result-title{font-family:"Fraunces",Georgia,serif;font-size:1.25rem;font-weight:700;margin-bottom:10px;text-align:center;}
+.result-lines{display:flex;flex-direction:column;gap:8px;margin-bottom:12px;}
+.result-line{display:flex;align-items:center;gap:10px;border:1px solid var(--panel-line);border-radius:10px;padding:8px 10px;}
+.result-line.winner{border-color:var(--good);background:color-mix(in srgb, var(--good) 14%, transparent);}
+.result-name{font-weight:600;min-width:64px;font-size:.88rem;}
+.result-cards{display:flex;gap:4px;}
+.result-label{font-size:.82rem;color:var(--muted);margin-left:auto;text-align:right;}
+.result-line.winner .result-label{color:var(--good);font-weight:600;}
+.result-explain{color:var(--muted);font-size:.88rem;margin-bottom:14px;line-height:1.4;}
+.result-continue{padding:12px 18px;font-size:.95rem;}
+
+.playing-card{width:52px;height:74px;border-radius:7px;background:var(--card-bg);color:var(--card-ink);
+  display:flex;flex-direction:column;justify-content:space-between;padding:4px 5px;font-weight:700;
+  box-shadow:0 2px 5px rgba(0,0,0,.35);font-size:.95rem;line-height:1;}
+.playing-card.red{color:var(--suit-red);}
+.playing-card.black{color:var(--suit-black);}
+.playing-card .mid{align-self:center;font-size:1.3rem;}
+.playing-card.back{background:repeating-linear-gradient(135deg, var(--accent), var(--accent) 4px, #b3842b 4px, #b3842b 8px);}
+.playing-card.small{width:40px;height:56px;font-size:.72rem;}
+.playing-card.small .mid{font-size:1rem;}
+
+/* ---------- Action bar ---------- */
+.actionbar{position:fixed;left:0;right:0;bottom:0;z-index:5;background:var(--panel);border-top:1px solid var(--panel-line);
+  padding:12px max(16px, env(safe-area-inset-right,0px)) max(12px, env(safe-area-inset-bottom,0px)) max(16px, env(safe-area-inset-left,0px));
+  display:none;}
+.actionbar.active{display:block;}
+.timerbar{height:4px;background:var(--panel-line);border-radius:2px;overflow:hidden;margin-bottom:10px;}
+.timerfill{height:100%;background:var(--accent);width:100%;transform-origin:left;}
+.action-row{display:flex;gap:10px;}
+.btn-pot,.btn-pass{flex:1;border:none;border-radius:12px;padding:14px 10px;font-weight:700;font-size:1rem;cursor:pointer;}
+.btn-pot{background:var(--good);color:#fff;}
+.btn-pass{background:var(--bad);color:#fff;}
+.btn-pot:focus-visible,.btn-pass:focus-visible{outline:2px solid var(--fg);outline-offset:2px;}
+.hand-hint{text-align:center;color:var(--muted);font-size:.8rem;margin-top:8px;}
+
+/* ---------- Log + reset ---------- */
+.end-list{display:flex;flex-direction:column;gap:8px;margin-top:10px;}
+.end-row{display:flex;align-items:center;gap:10px;border:1px solid var(--panel-line);border-radius:10px;padding:10px 12px;}
+.end-row.human{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, transparent);}
+.end-rank{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600;color:var(--muted);min-width:24px;}
+.end-name{font-weight:600;flex:1;}
+.end-chips{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;font-weight:600;}
+
+.log-card{margin-top:16px;}
+.log-card h2{font-size:1rem;margin:0 0 10px;}
+.log{max-height:170px;overflow-y:auto;display:flex;flex-direction:column;gap:6px;}
+.log-entry{font-size:.85rem;border-bottom:1px solid var(--panel-line);padding-bottom:6px;}
+.log-entry b{color:var(--accent-ink);background:var(--accent);border-radius:6px;padding:0 5px;}
+.ghost{background:transparent;border:1px solid var(--panel-line);color:var(--fg);border-radius:10px;
+  padding:9px 14px;font-size:.85rem;cursor:pointer;margin-top:10px;}
+.sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);}
+@media (prefers-reduced-motion: reduce){ .timerfill{transition:none !important;} }
+</style>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
+
+<div class="wrap">
+  <div class="topbar">
+    <div class="title-block">
+      <h1 id="appTitle">Bluff Pot</h1>
+      <div class="tagline" id="taglineText"></div>
+    </div>
+    <div class="balance"><span id="balanceLabel">chips</span> <b class="tabular" id="balanceOut">0</b></div>
+    <button class="ghost" id="langBtn" title="Switch language">EN</button>
+    <button class="ghost" id="pauseBtn" hidden>Pause</button>
+    <button class="ghost" id="stopBtn" hidden>Stop</button>
+  </div>
+
+  <section class="card" id="authScreen">
+    <p class="lede" id="authIntroText"></p>
+    <button class="primary" id="googleSignInBtn">Sign in with Google</button>
+    <p class="auth-status" id="authStatusText" hidden></p>
+  </section>
+
+  <section class="card" id="ageCheckScreen" hidden>
+    <p class="lede" id="ageCheckExplainText"></p>
+    <input class="name-input" type="number" id="birthYearInput" placeholder="1990" inputmode="numeric">
+    <button class="primary" id="ageCheckConfirmBtn" style="margin-top:12px;">Confirm</button>
+    <p class="auth-status" id="ageCheckErrorText" hidden></p>
+  </section>
+
+  <section class="card setup" id="setup" style="display:none;">
+    <div class="account-bar" id="accountBar" hidden>
+      <span id="accountBalanceText"></span>
+      <span class="auth-status" id="dailyBonusNote" hidden></span>
+      <button class="ghost tiny" id="signOutBtn">Sign out</button>
+    </div>
+    <p class="lede" id="ledeText"></p>
+
+    <fieldset>
+      <legend id="modeLegend">Game mode</legend>
+      <div class="choice-row" id="modeChoices" role="group" aria-label="Choose the game mode">
+        <button class="choice" id="modeSoloBtn" data-mode="solo" aria-pressed="true">Solo vs AI</button>
+        <button class="choice" id="modeHotseatBtn" data-mode="hotseat" aria-pressed="false">Together on this device</button>
+      </div>
+    </fieldset>
+
+    <fieldset id="soloOppField">
+      <legend id="oppLegend">Number of opponents</legend>
+      <div class="choice-row" id="oppChoices" role="group" aria-label="Choose the number of opponents">
+        <button class="choice" data-opp="1" aria-pressed="false">1</button>
+        <button class="choice" data-opp="2" aria-pressed="false">2</button>
+        <button class="choice" data-opp="3" aria-pressed="true">3</button>
+        <button class="choice" data-opp="4" aria-pressed="false">4</button>
+      </div>
+    </fieldset>
+
+    <div id="hotseatFields" hidden>
+      <fieldset>
+        <legend id="playersLegend">Number of players at the table</legend>
+        <div class="choice-row" id="playerCountChoices" role="group" aria-label="Choose the number of players">
+          <button class="choice" data-players="2" aria-pressed="true">2</button>
+          <button class="choice" data-players="3" aria-pressed="false">3</button>
+          <button class="choice" data-players="4" aria-pressed="false">4</button>
+          <button class="choice" data-players="5" aria-pressed="false">5</button>
+          <button class="choice" data-players="6" aria-pressed="false">6</button>
+        </div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="namesLegend">Names (for passing the device around)</legend>
+        <div id="nameRow1"><input class="name-input" id="nameInput1" type="text" maxlength="20" placeholder="Player 1"></div>
+        <div id="nameRow2"><input class="name-input" id="nameInput2" type="text" maxlength="20" placeholder="Player 2"></div>
+        <div id="nameRow3" hidden><input class="name-input" id="nameInput3" type="text" maxlength="20" placeholder="Player 3"></div>
+        <div id="nameRow4" hidden><input class="name-input" id="nameInput4" type="text" maxlength="20" placeholder="Player 4"></div>
+        <div id="nameRow5" hidden><input class="name-input" id="nameInput5" type="text" maxlength="20" placeholder="Player 5"></div>
+        <div id="nameRow6" hidden><input class="name-input" id="nameInput6" type="text" maxlength="20" placeholder="Player 6"></div>
+      </fieldset>
+
+      <fieldset>
+        <legend id="hotseatAiLegend">AI opponents too (optional)</legend>
+        <div class="choice-row" id="hotseatAiChoices" role="group" aria-label="Choose the number of AI opponents">
+          <button class="choice" data-hsai="0" aria-pressed="true">0</button>
+          <button class="choice" data-hsai="1" aria-pressed="false">1</button>
+          <button class="choice" data-hsai="2" aria-pressed="false">2</button>
+          <button class="choice" data-hsai="3" aria-pressed="false">3</button>
+        </div>
+      </fieldset>
+    </div>
+
+    <fieldset>
+      <legend id="anteLegend">Table stake (ante)</legend>
+      <div class="choice-row" id="anteChoices" role="group" aria-label="Choose the ante">
+        <button class="choice" id="anteLowBtn" data-ante="10" aria-pressed="true">Low · 10</button>
+        <button class="choice" id="anteMidBtn" data-ante="50" aria-pressed="false">Medium · 50</button>
+        <button class="choice" id="anteHighBtn" data-ante="100" aria-pressed="false">High · 100</button>
+      </div>
+    </fieldset>
+
+    <button class="primary" id="startBtn">Start game</button>
+    <p class="note" id="setupNoteText"></p>
+  </section>
+
+  <section class="table-wrap" id="tableWrap">
+    <div class="felt">
+      <div class="opponents" id="opponents"></div>
+      <div class="pot-area">
+        <div class="pot-label" id="potLabelText">Pot</div>
+        <div class="pot-amount tabular" id="potOut">0</div>
+        <div class="pot-reserve tabular" id="potReserveOut" hidden></div>
+      </div>
+      <div class="human-row" id="humanRow">
+        <div class="human-cards" id="humanCards"></div>
+        <div class="human-meta">
+          <span class="human-name" id="humanNameLabel">You</span>
+          <button class="ghost tiny" id="sitOutBtn" hidden>Sit out</button>
+        </div>
+        <div class="sitout-note" id="sitoutNote" hidden></div>
+      </div>
+
+      <div class="result-overlay" id="resultOverlay" role="status" aria-live="polite">
+        <div class="result-panel">
+          <div class="result-title" id="resultTitle"></div>
+          <div class="result-lines" id="resultLines"></div>
+          <div class="result-explain" id="resultExplain"></div>
+          <button class="primary result-continue" id="continueBtn">Next round</button>
+          <button class="ghost result-continue" id="addPlayerBtn" hidden style="margin-top:8px;width:100%;">+ Add player</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="card log-card">
+      <h2 id="logHeading">Log</h2>
+      <div class="log" id="log" aria-live="polite"></div>
+      <button class="ghost" id="resetBtn">New session (reset chips)</button>
+    </div>
+  </section>
+
+  <section class="card" id="endScreen" hidden>
+    <h2 class="display" id="endHeading" style="margin-top:0;">Final standings</h2>
+    <div class="end-list" id="endList"></div>
+    <button class="primary" id="backToMenuBtn" style="margin-top:16px;">Back to main menu</button>
+  </section>
+</div>
+
+<div class="actionbar" id="actionbar">
+  <div class="timerbar"><div class="timerfill" id="timerfill"></div></div>
+  <div class="action-row">
+    <button class="btn-pass" id="passBtn">Fold</button>
+    <button class="btn-pot" id="potBtn">Stay In</button>
+  </div>
+  <div class="hand-hint" id="handHint"></div>
+</div>
+
+<div class="pause-overlay" id="pauseOverlay" hidden role="status" aria-live="assertive">
+  <div class="pause-panel">
+    <div class="pause-title" id="pauseTitleText">Paused</div>
+    <div class="pause-by" id="pauseByText"></div>
+    <div class="pause-countdown" id="pauseCountdown"></div>
+    <button class="primary" id="resumeBtn">Resume</button>
+  </div>
+</div>
+
+<div class="pause-overlay" id="topUpOverlay" hidden role="status" aria-live="assertive">
+  <div class="pause-panel">
+    <div class="pause-title" id="topUpTitleText">Not enough chips</div>
+    <div class="pause-by" id="topUpExplain" style="margin-bottom:18px;"></div>
+    <button class="primary" id="buyChipsBtn" style="margin-bottom:10px;">Buy chips</button>
+    <button class="ghost" id="passForNowBtn" style="width:100%;margin-top:0;">I'll pass</button>
+  </div>
+</div>
+
+<div class="pause-overlay" id="handoffOverlay" hidden role="status" aria-live="assertive">
+  <div class="pause-panel">
+    <div class="pause-title" id="handoffTitleText">Pass the device</div>
+    <button class="primary" id="handoffConfirmBtn" style="margin-top:6px;">I'm ready, let me look</button>
+  </div>
+</div>
+
+<div class="pause-overlay" id="addPlayerOverlay" hidden role="status" aria-live="assertive">
+  <div class="pause-panel">
+    <div class="pause-title" id="addPlayerTitleText">Add a new player</div>
+    <input class="name-input" id="addPlayerNameInput" type="text" maxlength="20" placeholder="New player's name" style="margin-top:10px;">
+    <button class="primary" id="addPlayerConfirmBtn" style="margin-top:14px;">Add</button>
+    <button class="ghost" id="addPlayerCancelBtn" style="width:100%;margin-top:8px;">Cancel</button>
+  </div>
+</div>
+
+<!-- Firebase's "compat" build: classic (non-module) scripts, loaded from jsdelivr since the
+     publish host's CDN allowlist doesn't include Firebase's own gstatic.com. Classic scripts
+     with a src run synchronously, in order, as the page parses — unlike a module build, there's
+     no deferred-timing gap to bridge before the main script below can use window.firebase. -->
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-app-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-auth-compat.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/firebase@10.12.2/firebase-firestore-compat.js"></script>
+<script>
+var firebaseConfig = {
+  apiKey: "AIzaSyCJ7tAe5cn-XQl4lKkMOdchQ5daQrNfm9U",
+  authDomain: "bluff-pot.firebaseapp.com",
+  projectId: "bluff-pot",
+  storageBucket: "bluff-pot.firebasestorage.app",
+  messagingSenderId: "916545136101",
+  appId: "1:916545136101:web:ced4957e9ccedc9347fb0c",
+  measurementId: "G-VF8DFY6ZZF"
+};
+firebase.initializeApp(firebaseConfig);
+var fbAuthCompat = firebase.auth();
+var fbDbCompat = firebase.firestore();
+
+/* Thin adapter so the rest of the app (written against the modular-SDK call shape) doesn't need
+   to change: same function names and arguments, implemented here on top of the compat SDK. */
+function fbDoc(db, collection, id){ return db.collection(collection).doc(id); }
+function fbGetDoc(ref){
+  return ref.get().then(function(snap){
+    return { exists: function(){ return snap.exists; }, data: function(){ return snap.data(); } };
+  });
+}
+function fbSetDoc(ref, data){ return ref.set(data); }
+function fbUpdateDoc(ref, data){ return ref.update(data); }
+function fbIncrement(n){ return firebase.firestore.FieldValue.increment(n); }
+function fbServerTimestamp(){ return firebase.firestore.FieldValue.serverTimestamp(); }
+function fbOnAuthStateChanged(auth, cb){ return auth.onAuthStateChanged(cb); }
+function fbSignInWithPopup(auth, provider){ return auth.signInWithPopup(provider); }
+function fbSignInWithRedirect(auth, provider){ return auth.signInWithRedirect(provider); }
+function fbGetRedirectResult(auth){ return auth.getRedirectResult(); }
+function fbSignOut(auth){ return auth.signOut(); }
+function FbGoogleAuthProvider(){ return new firebase.auth.GoogleAuthProvider(); }
+
+window.BluffPotFirebase = {
+  auth: fbAuthCompat, db: fbDbCompat,
+  GoogleAuthProvider: FbGoogleAuthProvider, signInWithPopup: fbSignInWithPopup,
+  signInWithRedirect: fbSignInWithRedirect, getRedirectResult: fbGetRedirectResult,
+  onAuthStateChanged: fbOnAuthStateChanged, signOut: fbSignOut,
+  doc: fbDoc, getDoc: fbGetDoc, setDoc: fbSetDoc, updateDoc: fbUpdateDoc,
+  increment: fbIncrement, serverTimestamp: fbServerTimestamp
+};
+window.dispatchEvent(new CustomEvent("bluffpot-firebase-ready"));
+</script>
+
+<script>
+(function(){
+"use strict";
+
+/* ---------------- Deck & hand evaluation ---------------- */
+var RANKS = ["2","3","4","5","6","7","8","9","10","J","Q","K","A"];
+var SUITS = ["♠","♥","♦","♣"];
+var RED_SUITS = {"♥":1,"♦":1};
+
+/* ---------------- Language ----------------
+   Internal game state (status keys, style keys) stays in plain English identifiers;
+   every string actually shown to a player goes through LANG[currentLang] / T(), so
+   switching language never touches game logic, only rendering. Game history already
+   written to the log keeps the language it was logged in, like a real chat log. */
+var LANG = {
+  nl: {
+    appName: "Bluff Pot",
+    tagline: "naar het Nederlandse kaartspel Potten en Passen",
+    chips: "chips", chipsSuffix: " chips",
+    pauseBtn: "Pauze", stopBtn: "Stoppen",
+    setupLede: "Speel solo tegen het systeem, of samen om één toestel heen — naar het Nederlandse kaartspel Potten en Passen. De tegenstanders rekenen hun winkans echt uit op basis van de 52 kaarten, geen willekeur.",
+    modeLegend: "Spelmodus", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Samen op dit toestel",
+    anteLegend: "Tafelinzet (ante)", anteGroupLabel: "Kies de ante",
+    anteLow: "Laag · 10", anteMid: "Midden · 50", anteHigh: "Hoog · 100",
+    oppLegend: "Aantal tegenstanders", oppGroupLabel: "Kies het aantal tegenstanders",
+    playersLegend: "Aantal spelers aan tafel", playersGroupLabel: "Kies het aantal spelers",
+    namesLegend: "Namen (voor het doorgeven van het toestel)",
+    hotseatAiLegend: "AI-tegenstanders erbij (optioneel)", hotseatAiGroupLabel: "Kies het aantal AI-tegenstanders",
+    startBtn: "Start spel",
+    setupNote: "Prototype: chips zijn tijdelijk speelgeld voor deze sessie en resetten bij het herladen van de pagina. Echte chips-aankoop en opslag volgen in een latere versie.",
+    you: "Jij",
+    sitOutBtn: "Zit ik uit", sitBackInBtn: "Weer meespelen",
+    sitoutNote: "Je zit er even uit — je doet niet mee en betaalt niets totdat je weer meespeelt.",
+    pot: "Pot", potBtn: "Potten", passBtn: "Passen",
+    yourHand: "Jouw hand: ",
+    cannotAffordPot: "Je hebt niet genoeg chips om deze pot te dekken.",
+    noContestHint: "Niemand anders doet nog mee — potten heeft dan geen zin, dus je past.",
+    potReserveNote: function(amount){ return "+ " + amount + " in reserve"; },
+    logPotCapped: function(cap, reserve){ return "De pot is bevroren op het maximum van " + cap + " chips voor deze inzet; " + reserve + " chips wachten in reserve totdat de pot leeg is."; },
+    logReserveReleased: function(amount){ return "De pot is leeg — de " + amount + " chips in reserve vormen nu de nieuwe pot."; },
+    authIntroText: "Log in met je Google-account om je chips-saldo te bewaren tussen sessies.",
+    googleSignInBtn: "Inloggen met Google",
+    firebaseLoadError: "Kon geen verbinding maken met de accountserver. Herlaad de pagina of probeer het later opnieuw.",
+    ageCheckExplainText: "Je moet 18 jaar of ouder zijn om te kunnen spelen. Vul je geboortejaar in om dit te bevestigen.",
+    birthYearPlaceholder: "Geboortejaar, bijv. 1990",
+    ageCheckConfirmBtn: "Bevestigen",
+    ageCheckInvalid: "Vul een geldig geboortejaar in.",
+    ageCheckTooYoung: "Je moet 18 jaar of ouder zijn om te kunnen spelen.",
+    signOutBtn: "Uitloggen",
+    accountBalance: function(amount){ return "Account-saldo: " + amount + " chips"; },
+    dailyBonusGranted: function(amount){ return "Dagelijkse bonus ontvangen: +" + amount + " chips!"; },
+    authError: function(code){ return "Er ging iets mis (" + code + "). Probeer het opnieuw."; },
+    seeStandingsBtn: "Bekijk eindstand",
+    topUpTitle: "Niet genoeg chips",
+    topUpExplain: "Je hebt niet genoeg chips meer voor de inzet van de volgende ronde. Koop chips bij om mee te blijven spelen, of pas deze ronde(s) totdat je weer genoeg hebt.",
+    topUpExplainNamed: function(name){ return name + ", er zijn niet genoeg chips meer voor de inzet van de volgende ronde. Chips bijkopen om mee te blijven spelen, of passen totdat er weer genoeg zijn."; },
+    buyChipsBtn: "Chips bijkopen",
+    passForNowBtn: "Ik pas",
+    logSimPurchase: function(amount){ return "Chips bijgekocht (gesimuleerd in dit prototype): +" + amount + " chips."; },
+    logSimPurchaseNamed: function(name,amount){ return name + " koopt chips bij (gesimuleerd in dit prototype): +" + amount + " chips."; },
+    logPassedNoChips: "Jij hebt aangegeven te passen omdat je niet genoeg chips meer hebt. Je doet niet mee totdat je weer genoeg chips hebt.",
+    logPassedNoChipsNamed: function(name){ return name + " past omdat er niet genoeg chips meer zijn. Geen deelname totdat er weer genoeg chips zijn."; },
+    statusTurn: "aan zet", statusPot: "gepot", statusPass: "gepast", statusSitOut: "zit uit", statusWait: "wacht",
+    verloop: "Verloop", resetBtn: "Nieuwe sessie (reset chips)",
+    pauzeTitle: "Gepauzeerd",
+    pausedBy: function(n){ return "Gepauzeerd door " + n; },
+    resumeIn: function(s){ return "Gaat automatisch verder in " + s + " sec."; },
+    resumeBtn: "Verdergaan", nextRoundBtn: "Volgende ronde",
+    terugMenuBtn: "Terug naar hoofdmenu",
+    and: " en ",
+    someone: "Iemand",
+    handoffPrompt: function(name){ return "Geef het toestel aan " + name; },
+    handoffBtn: "Ik ben klaar, laat me kijken",
+    addPlayerBtn: "+ Speler toevoegen",
+    addPlayerTitle: "Nieuwe speler toevoegen",
+    addPlayerNamePlaceholder: "Naam van de nieuwe speler",
+    addPlayerConfirmBtn: "Toevoegen",
+    addPlayerCancelBtn: "Annuleren",
+    logPlayerJoined: function(name){ return name + " schuift aan en doet vanaf deze ronde mee."; },
+    hand: function(kind, meta){
+      if(kind==="pair") return "Paar " + meta.rank + "'s";
+      if(kind==="groot") return "Groot Stuk";
+      if(kind==="klein") return "Klein Stuk";
+      if(kind==="heer") return "Heerstuk";
+      if(kind==="superbluf") return "Superbluf";
+      return meta.sum + " punten";
+    },
+    styleLabel: {cautious:"voorzichtig", balanced:"balans", bluffer:"bluffer"},
+    cardsNotShown: "kaarten niet getoond",
+    deltaChips: function(n){ return (n>0?"+":"") + n + " chips"; },
+    logEveryoneAnte: function(ante,pot){ return "Iedereen zet " + ante + " chips bij. Pot staat nu op " + pot + "."; },
+    logPotCarries: function(pot){ return "De pot staat al op " + pot + " chips — niemand hoeft deze ronde opnieuw in te zetten."; },
+    logAiDecision: function(name, style, didPot, pct){ return name + " (" + style + ") " + (didPot?"pot.":"past.") + " [geschatte winkans " + pct + "%]"; },
+    logHumanDecision: function(didPot){ return "Jij " + (didPot?"pot.":"past."); },
+    logPlayerDecision: function(name, didPot){ return name + " " + (didPot?"pot.":"past."); },
+    logShowdown: function(text){ return "Showdown: " + text; },
+    logNobodyPots: function(ante){ return "Iedereen past. De pot blijft staan, en iedereen zet komende ronde opnieuw " + ante + " chips bij."; },
+    logSoloWin: function(name,isHuman,amount){ return (isHuman?"Jij":name) + " was de enige die potte en wint de pot van " + amount + " chips zonder showdown."; },
+    logSingleWinner: function(wName,isHumanW,pot,handLbl,loserText,carryPot){ return (isHumanW?"Jij wint":wName+" wint") + " de pot van " + pot + " chips met " + handLbl + ". " + loserText + " De pot begint daardoor al op " + carryPot + " chips."; },
+    logBijleggenMulti: function(names,amount){ return names + " leggen elk " + amount + " chips bij voor de volgende ronde."; },
+    logBijleggenSingle: function(names,amount){ return names + " legt " + amount + " chips bij voor de volgende ronde."; },
+    logTie: function(winNames, handLbl, legtZin, newPot){ return "Gelijkspel tussen " + winNames + " (" + handLbl + "). " + legtZin + "; de pot groeit naar " + newPot + " chips voor de volgende ronde."; },
+    legtMulti: function(names,amount){ return names + " leggen elk " + amount + " chips bij"; },
+    legtSingle: function(names,amount){ return names + " legt " + amount + " chips bij"; },
+    logSitOutOn: "Jij geeft aan dat je er even uit zit. Je doet niet mee en zet niets in totdat je weer meespeelt.",
+    logSitOutOff: "Jij speelt weer mee vanaf de volgende ronde.",
+    logSitOutOnNamed: function(name){ return name + " zit er even uit — geen inzet, geen deelname totdat " + name + " weer meespeelt."; },
+    logSitOutOffNamed: function(name){ return name + " speelt weer mee vanaf de volgende ronde."; },
+    logNotEnough: "Niet genoeg spelers hebben nog genoeg chips (of zitten niet uit). Start een nieuwe sessie.",
+    logNotEnoughAnte: "Je hebt niet genoeg chips meer voor de ante. Start een nieuwe sessie om verder te spelen.",
+    resultNobodyPotsTitle: "Niemand pot",
+    resultWinTitle: function(isHumanW,name,amount){ return (isHumanW?"Jij wint":name+" wint") + " · " + amount + " chips"; },
+    resultTieTitle: "Gelijkspel",
+    playerName: function(i){ return "Speler " + i; },
+    endHeadingWin: "Eindstand · jij wint!",
+    endHeadingRank: function(rank,total){ return "Eindstand · plek " + rank + " van " + total; }
+  },
+  en: {
+    appName: "Bluff Pot",
+    tagline: "based on the Dutch card game Potten en Passen",
+    chips: "chips", chipsSuffix: " chips",
+    pauseBtn: "Pause", stopBtn: "Stop",
+    setupLede: "Play solo against the system, or together around one device — based on the Dutch card game Potten en Passen. Opponents calculate their real win chance from the actual 52 cards, no randomness.",
+    modeLegend: "Game mode", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Together on this device",
+    anteLegend: "Table stake (ante)", anteGroupLabel: "Choose the ante",
+    anteLow: "Low · 10", anteMid: "Medium · 50", anteHigh: "High · 100",
+    oppLegend: "Number of opponents", oppGroupLabel: "Choose the number of opponents",
+    playersLegend: "Number of players at the table", playersGroupLabel: "Choose the number of players",
+    namesLegend: "Names (for passing the device around)",
+    hotseatAiLegend: "AI opponents too (optional)", hotseatAiGroupLabel: "Choose the number of AI opponents",
+    startBtn: "Start game",
+    setupNote: "Prototype: chips are temporary play money for this session and reset when the page reloads. Real chip purchases and storage follow in a later version.",
+    you: "You",
+    sitOutBtn: "Sit out", sitBackInBtn: "Rejoin",
+    sitoutNote: "You're sitting out — you don't take part and pay nothing until you rejoin.",
+    pot: "Pot", potBtn: "IN", passBtn: "Fold",
+    yourHand: "Your hand: ",
+    cannotAffordPot: "You don't have enough chips to cover this pot.",
+    noContestHint: "Nobody else is still in — potting wouldn't pay off, so you fold.",
+    potReserveNote: function(amount){ return "+ " + amount + " in reserve"; },
+    logPotCapped: function(cap, reserve){ return "The pot is frozen at the " + cap + "-chip maximum for this stake; " + reserve + " chips wait in reserve until the pot is empty."; },
+    logReserveReleased: function(amount){ return "The pot is empty — the " + amount + " chips in reserve now form the new pot."; },
+    authIntroText: "Sign in with your Google account to keep your chip balance between sessions.",
+    googleSignInBtn: "Sign in with Google",
+    firebaseLoadError: "Couldn't connect to the account server. Reload the page or try again later.",
+    ageCheckExplainText: "You need to be 18 or older to play. Enter your birth year to confirm this.",
+    birthYearPlaceholder: "Birth year, e.g. 1990",
+    ageCheckConfirmBtn: "Confirm",
+    ageCheckInvalid: "Enter a valid birth year.",
+    ageCheckTooYoung: "You need to be 18 or older to play.",
+    signOutBtn: "Sign out",
+    accountBalance: function(amount){ return "Account balance: " + amount + " chips"; },
+    dailyBonusGranted: function(amount){ return "Daily bonus received: +" + amount + " chips!"; },
+    authError: function(code){ return "Something went wrong (" + code + "). Please try again."; },
+    seeStandingsBtn: "See final standings",
+    topUpTitle: "Not enough chips",
+    topUpExplain: "You don't have enough chips left for the next round's stake. Buy more chips to keep playing, or sit out this round (or more) until you do.",
+    topUpExplainNamed: function(name){ return name + ", there aren't enough chips left for the next round's stake. Buy more chips to keep playing, or sit out until there are enough again."; },
+    buyChipsBtn: "Buy chips",
+    passForNowBtn: "I'll pass",
+    logSimPurchase: function(amount){ return "Chips purchased (simulated in this prototype): +" + amount + " chips."; },
+    logSimPurchaseNamed: function(name,amount){ return name + " buys more chips (simulated in this prototype): +" + amount + " chips."; },
+    logPassedNoChips: "You've chosen to pass because you don't have enough chips left. You won't take part until you have enough again.",
+    logPassedNoChipsNamed: function(name){ return name + " passes — not enough chips left. No play until there are enough again."; },
+    statusTurn: "deciding", statusPot: "in", statusPass: "folded", statusSitOut: "sitting out", statusWait: "waiting",
+    verloop: "Log", resetBtn: "New session (reset chips)",
+    pauzeTitle: "Paused",
+    pausedBy: function(n){ return "Paused by " + n; },
+    resumeIn: function(s){ return "Resuming automatically in " + s + " sec."; },
+    resumeBtn: "Resume", nextRoundBtn: "Next round",
+    terugMenuBtn: "Back to main menu",
+    and: " and ",
+    someone: "Someone",
+    handoffPrompt: function(name){ return "Pass the device to " + name; },
+    handoffBtn: "I'm ready, let me look",
+    addPlayerBtn: "+ Add player",
+    addPlayerTitle: "Add a new player",
+    addPlayerNamePlaceholder: "New player's name",
+    addPlayerConfirmBtn: "Add",
+    addPlayerCancelBtn: "Cancel",
+    logPlayerJoined: function(name){ return name + " joins the table from this round on."; },
+    hand: function(kind, meta){
+      if(kind==="pair") return "Pair of " + meta.rank + "s";
+      if(kind==="groot") return "Big Run";
+      if(kind==="klein") return "Small Run";
+      if(kind==="heer") return "Middle Run";
+      if(kind==="superbluf") return "Bluff";
+      return meta.sum + " points";
+    },
+    styleLabel: {cautious:"cautious", balanced:"balanced", bluffer:"bluffer"},
+    cardsNotShown: "cards not shown",
+    deltaChips: function(n){ return (n>0?"+":"") + n + " chips"; },
+    logEveryoneAnte: function(ante,pot){ return "Everyone antes " + ante + " chips. The pot is now " + pot + "."; },
+    logPotCarries: function(pot){ return "The pot already stands at " + pot + " chips — nobody needs to ante again this round."; },
+    logAiDecision: function(name, style, didPot, pct){ return name + " (" + style + ") " + (didPot?"stays in.":"folds.") + " [estimated win chance " + pct + "%]"; },
+    logHumanDecision: function(didPot){ return "You " + (didPot?"stay in.":"fold."); },
+    logPlayerDecision: function(name, didPot){ return name + " " + (didPot?"stays in.":"folds."); },
+    logShowdown: function(text){ return "Showdown: " + text; },
+    logNobodyPots: function(ante){ return "Everyone folds. The pot stays as is, and everyone antes " + ante + " chips again next round."; },
+    logSoloWin: function(name,isHuman,amount){ return (isHuman?"You":name) + " were the only one to stay in and win the pot of " + amount + " chips without a showdown."; },
+    logSingleWinner: function(wName,isHumanW,pot,handLbl,loserText,carryPot){ return (isHumanW?"You win":wName+" wins") + " the pot of " + pot + " chips with " + handLbl + ". " + loserText + " That already starts the pot at " + carryPot + " chips."; },
+    logBijleggenMulti: function(names,amount){ return names + " each add " + amount + " chips for the next round."; },
+    logBijleggenSingle: function(names,amount){ return names + " adds " + amount + " chips for the next round."; },
+    logTie: function(winNames, handLbl, legtZin, newPot){ return "Tie between " + winNames + " (" + handLbl + "). " + legtZin + "; the pot grows to " + newPot + " chips for the next round."; },
+    legtMulti: function(names,amount){ return names + " each add " + amount + " chips"; },
+    legtSingle: function(names,amount){ return names + " adds " + amount + " chips"; },
+    logSitOutOn: "You've marked yourself as sitting out. You won't take part and won't ante until you rejoin.",
+    logSitOutOff: "You're back in from the next round.",
+    logSitOutOnNamed: function(name){ return name + " is sitting out — no stake, no play until " + name + " rejoins."; },
+    logSitOutOffNamed: function(name){ return name + " is back in from the next round."; },
+    logNotEnough: "Not enough players still have enough chips (or aren't sitting out). Start a new session.",
+    logNotEnoughAnte: "You don't have enough chips left for the ante. Start a new session to keep playing.",
+    resultNobodyPotsTitle: "Nobody stays in",
+    resultWinTitle: function(isHumanW,name,amount){ return (isHumanW?"You win":name+" wins") + " · " + amount + " chips"; },
+    resultTieTitle: "Tie",
+    playerName: function(i){ return "Player " + i; },
+    endHeadingWin: "Final standings · you win!",
+    endHeadingRank: function(rank,total){ return "Final standings · place " + rank + " of " + total; }
+  }
+};
+
+var currentLang = (function(){
+  try{
+    var saved = localStorage.getItem("bluffpot_lang");
+    if(saved === "nl" || saved === "en") return saved;
+  }catch(e){}
+  try{
+    if(navigator.language && navigator.language.toLowerCase().indexOf("nl") === 0) return "nl";
+  }catch(e){}
+  return "en";
+})();
+function T(){ return LANG[currentLang]; }
+
+function rankValue(rank){ // used for plain-sum hands
+  if(rank==="J") return 1;
+  if(rank==="Q") return 2;
+  if(rank==="K") return 3;
+  if(rank==="A") return 11; // not fixed by the original rules; a documented house ruling
+  return Number(rank);
+}
+function rankOrder(rank){ return RANKS.indexOf(rank); } // 0=2 ... 12=A, used to rank pairs
+
+function buildDeck(){
+  var d = [];
+  for(var s=0;s<SUITS.length;s++){
+    for(var r=0;r<RANKS.length;r++){
+      d.push({rank:RANKS[r], suit:SUITS[s], id:RANKS[r]+SUITS[s]});
+    }
+  }
+  return d;
+}
+function shuffle(arr){
+  for(var i=arr.length-1;i>0;i--){
+    var j = Math.floor(Math.random()*(i+1));
+    var t = arr[i]; arr[i]=arr[j]; arr[j]=t;
+  }
+  return arr;
+}
+
+// Hand power: higher wins. Superbluf/Bluff is pinned below every plain-sum hand (min plain sum is 3).
+// Returns a language-neutral {power, kind, meta}; handLabel() below turns that into display text.
+function evaluateHand(c1, c2){
+  var sameSuit = c1.suit === c2.suit;
+  var hasJQ = (c1.rank==="J" && c2.rank==="Q") || (c1.rank==="Q" && c2.rank==="J");
+  var hasQK = (c1.rank==="Q" && c2.rank==="K") || (c1.rank==="K" && c2.rank==="Q");
+  var hasKJ = (c1.rank==="K" && c2.rank==="J") || (c1.rank==="J" && c2.rank==="K");
+
+  if(c1.rank === c2.rank){
+    return {power: 50 + rankOrder(c1.rank), kind:"pair", meta:{rank:c1.rank}};
+  }
+  if(sameSuit && hasQK) return {power:100, kind:"groot", meta:{}};
+  if(sameSuit && hasJQ) return {power:40, kind:"klein", meta:{}};
+  if(sameSuit && hasKJ) return {power:39, kind:"heer", meta:{}};
+  if(!sameSuit && hasJQ) return {power:0, kind:"superbluf", meta:{}};
+  var sum = rankValue(c1.rank) + rankValue(c2.rank);
+  return {power: sum, kind:"sum", meta:{sum:sum}};
+}
+function handLabel(hand){ return T().hand(hand.kind, hand.meta); }
+
+/* ---------------- Win-probability engine ----------------
+   Exact enumeration over the real remaining deck: every possible 2-card hand an
+   opponent could hold from the cards not in this player's own hand. This is the
+   realistic win-chance calculation based on the actual 52 cards the game design calls for. */
+function winProbability(myCards, deckMinusMine){
+  var wins=0, ties=0, total=0;
+  for(var i=0;i<deckMinusMine.length;i++){
+    for(var j=i+1;j<deckMinusMine.length;j++){
+      var oppPower = evaluateHand(deckMinusMine[i], deckMinusMine[j]).power;
+      var myPower = evaluateHand(myCards[0], myCards[1]).power;
+      if(myPower>oppPower) wins++; else if(myPower===oppPower) ties++;
+      total++;
+    }
+  }
+  return total ? (wins + 0.5*ties)/total : 0.5;
+}
+
+/* ---------------- Game state ---------------- */
+var STYLES = [
+  {key:"cautious", threshold:0.56, bluff:0.03},
+  {key:"balanced", threshold:0.46, bluff:0.08},
+  {key:"bluffer",  threshold:0.34, bluff:0.20}
+];
+
+var state = null;
+var STARTING_CHIPS = 2000; // how many chips every player (including a later latecomer) starts with
+var MAX_REAL_PLAYERS = 6; // same cap as the hotseat setup screen (nameInput1..6)
+var STARTING_ACCOUNT_CHIPS = 1000; // one-time welcome balance for a brand-new account (persisted in Firestore)
+var DAILY_BONUS_CHIPS = 100; // granted once per calendar day on sign-in
+var MIN_ACCOUNT_AGE = 18;
+
+// Pot ceiling per table stake, so a pot can never inflate indefinitely at a given ante
+// level. Whatever would push the pot past this ceiling is held back as a "reserve"
+// instead of being added to the live pot (see applyPotCap below).
+function potCapFor(ante){
+  if(ante <= 10) return 1000;
+  if(ante <= 50) return 2500;
+  return 5000; // 100 (and any higher ante, as a sane fallback)
+}
+
+// Call right after anything that grows state.pot. If the pot now exceeds this table's
+// ceiling, the overflow is peeled off into state.reserve (never lost) and the live pot is
+// clamped to the ceiling, so this round is played for a capped amount. The reserve is only
+// ever released once the pot is fully paid out to an empty 0 (see resolveShowdown's solo-win
+// branch) — at that point it becomes the start of the next pot, and can grow (and get capped)
+// again from there.
+function applyPotCap(){
+  var cap = potCapFor(state.ante);
+  if(state.pot > cap){
+    var overflow = state.pot - cap;
+    state.pot = cap;
+    state.reserve = (state.reserve || 0) + overflow;
+    log(T().logPotCapped(cap, state.reserve));
+  }
+}
+
+// customName (hotseat real players) wins over the generic "You"; AI players use their nameIndex.
+function displayName(p){
+  if(p.isHuman) return p.customName ? p.customName : T().you;
+  return T().playerName(p.nameIndex);
+}
+
+/* config = { ante, hotseat:false, oppCount }  — solo vs AI (unchanged from the original prototype)
+   config = { ante, hotseat:true, playerNames:[...], aiCount }  — pass-the-device multiplayer:
+   several REAL players share this one device, each seeing only their own cards when it is
+   their turn (see the handoff gate below); AI opponents are optional extras at the same table. */
+function newGame(config){
+  var players = [];
+  if(config.hotseat){
+    config.playerNames.forEach(function(nm, i){
+      players.push({ id:"human"+i, isHuman:true, chips:STARTING_CHIPS, sittingOut:false, customName: nm });
+    });
+    for(var i=0;i<config.aiCount;i++){
+      players.push({
+        id:"ai"+i, isHuman:false, chips:STARTING_CHIPS, nameIndex:(i+1),
+        style: STYLES[i % STYLES.length], sittingOut:false
+      });
+    }
+  } else {
+    players.push({ id:"human", isHuman:true, chips:STARTING_CHIPS, sittingOut:false });
+    for(var j=0;j<config.oppCount;j++){
+      players.push({
+        id:"ai"+j, isHuman:false, chips:STARTING_CHIPS, nameIndex:(j+1),
+        style: STYLES[j % STYLES.length], sittingOut:false
+      });
+    }
+  }
+  state = { ante: config.ante, players: players, pot:0, reserve:0, deck:[], log:[], roundActive:false, timer:null,
+            anteNextRound:true, paused:false, aiTimeoutId:null, pauseInterval:null, pauseRemaining:0,
+            hotseat: !!config.hotseat, activeTurnConfirmed:false, handoffCallback:null,
+            topUpTarget:null, pendingResolution:[], dealerIndex:0, startingChips: STARTING_CHIPS };
+  updateMultiplayerControls();
+  render();
+}
+
+function startRound(){
+  var t = T();
+  // Rotate who gets to act first each round (dealerIndex), so the advantage/disadvantage
+  // of deciding early vs. late on potten-of-passen evens out across all players over time,
+  // rather than one seat always acting first.
+  var n = state.players.length;
+  var rotated = [];
+  for(var r=0;r<n;r++){ rotated.push(state.players[(state.dealerIndex + r) % n]); }
+  var active = rotated.filter(function(p){ return p.chips >= state.ante && !p.sittingOut; });
+  if(active.length < 2){
+    log(t.logNotEnough);
+    endSession();
+    return;
+  }
+  state.deck = shuffle(buildDeck());
+  // state.pot is NOT reset here: a pot that a loser matched in the previous
+  // round carries over as the starting pot for this round. Whether everyone
+  // antes again is decided by resolveShowdown: nobody potting means the ante
+  // repeats (so the pot keeps climbing), while a loser matching the pot
+  // already funds the next round, so no fresh ante is collected then.
+  var freshPot = (state.anteNextRound !== false);
+  state.players.forEach(function(p){
+    p.cards = null; p.status = p.sittingOut ? "zit uit" : "wacht"; p.active = false;
+  });
+  active.forEach(function(p){
+    p.cards = [state.deck.pop(), state.deck.pop()];
+    if(freshPot){
+      p.chips -= state.ante;
+      state.pot += state.ante;
+    }
+    p.status = "beslissen";
+    p.active = true;
+  });
+  if(freshPot) applyPotCap();
+  log(freshPot ? t.logEveryoneAnte(state.ante, state.pot) : t.logPotCarries(state.pot));
+  state.order = active.slice();
+  state.turnIndex = 0;
+  state.activeTurnConfirmed = false;
+  state.roundActive = true;
+  state.dealerIndex = (state.dealerIndex + 1) % n;
+  render();
+  nextTurn();
+}
+
+// Build the "unseen to this player" deck: full 52 minus their own two cards.
+// (Other players' actual cards are hidden information, exactly as a real opponent would see it.)
+function unseenDeckFor(player){
+  var used = {}; used[player.cards[0].id]=true; used[player.cards[1].id]=true;
+  return buildDeck().filter(function(c){ return !used[c.id]; });
+}
+
+function nextTurn(){
+  if(!state.roundActive) return;
+  if(state.turnIndex >= state.order.length){
+    resolveShowdown();
+    return;
+  }
+  var p = state.order[state.turnIndex];
+  if(p.status !== "beslissen"){ state.turnIndex++; nextTurn(); return; }
+
+  if(p.isHuman){
+    if(state.hotseat){
+      // Pass-the-device: hide the table from everyone until this player confirms it's
+      // their turn to look, so the previous player's cards are never still on screen,
+      // and the next player can't peek before the device actually reaches them.
+      state.activeTurnConfirmed = false;
+      render();
+      showHandoffGate(p, function(){ state.activeTurnConfirmed = true; showActionBar(p); });
+    } else {
+      showActionBar(p);
+    }
+  }else{
+    hideActionBar();
+    render();
+    var mySession = state;
+    state.aiTimeoutId = setTimeout(function(){
+      if(state !== mySession || !state.roundActive || state.paused) return; // session stopped/reset/paused meanwhile
+      state.aiTimeoutId = null;
+      aiDecide(p); state.turnIndex++; state.activeTurnConfirmed = false; render(); nextTurn();
+    }, 650 + Math.random()*500);
+  }
+}
+
+/* ---------------- Pause, sit-out & hand-off (only relevant with more than 1 real player) ----------------
+   Any human player may freeze the whole table for max. 120 seconds (everyone sees the same
+   message), e.g. to step away without being auto-folded or losing their stake. "Sit out" is
+   for a longer absence: that player skips one or more rounds, antes nothing and so pays
+   nothing. The hand-off gate ("pass the device to X") keeps hotseat play honest: nobody's
+   cards stay on screen for the next player to see while the device changes hands. As long as
+   there is only 1 real player (the solo-vs-AI mode), these controls stay hidden/unused. */
+function realHumanCount(){
+  if(!state) return 0;
+  return state.players.filter(function(p){ return p.isHuman; }).length;
+}
+function updateMultiplayerControls(){
+  var multi = realHumanCount() > 1;
+  document.getElementById("pauseBtn").hidden = !multi;
+  document.getElementById("sitOutBtn").hidden = !multi;
+  if(!multi) document.getElementById("sitoutNote").hidden = true;
+}
+function pauseGame(byName){
+  if(!state || state.paused || !state.roundActive) return;
+  if(realHumanCount() <= 1) return; // only applies with more than 1 real player
+  state.paused = true;
+  clearTimeout(state.timer); state.timer = null;
+  clearTimeout(state.aiTimeoutId); state.aiTimeoutId = null;
+  hideActionBar();
+  showPauseOverlay(byName, 120);
+}
+function showPauseOverlay(byName, seconds){
+  state.pauseRemaining = seconds;
+  document.getElementById("pauseByText").textContent = T().pausedBy(byName);
+  document.getElementById("pauseCountdown").textContent = T().resumeIn(state.pauseRemaining);
+  document.getElementById("pauseOverlay").hidden = false;
+  clearInterval(state.pauseInterval);
+  state.pauseInterval = setInterval(function(){
+    state.pauseRemaining--;
+    if(state.pauseRemaining <= 0){ resumeGame(); return; }
+    document.getElementById("pauseCountdown").textContent = T().resumeIn(state.pauseRemaining);
+  }, 1000);
+}
+function resumeGame(){
+  if(!state || !state.paused) return;
+  state.paused = false;
+  clearInterval(state.pauseInterval); state.pauseInterval = null;
+  document.getElementById("pauseOverlay").hidden = true;
+  if(!state.roundActive) return;
+  nextTurn();
+}
+function toggleSitOut(){
+  if(!state) return;
+  var revealed = getRevealedPlayer();
+  if(!revealed) return;
+  revealed.sittingOut = !revealed.sittingOut;
+  if(state.hotseat){
+    log(revealed.sittingOut ? T().logSitOutOnNamed(displayName(revealed)) : T().logSitOutOffNamed(displayName(revealed)));
+  } else {
+    log(revealed.sittingOut ? T().logSitOutOn : T().logSitOutOff);
+  }
+  render();
+}
+
+// Who is shown at the bottom of the felt, face up, right now: solo mode is always "you";
+// hotseat mode is whichever real player just confirmed the hand-off gate for their own turn,
+// or nobody while the device is mid-pass, an AI is thinking, or the round is over.
+function getRevealedPlayer(){
+  if(!state) return null;
+  if(!state.hotseat) return state.players[0];
+  if(state.roundActive && state.order && state.turnIndex < state.order.length){
+    var p = state.order[state.turnIndex];
+    if(p.isHuman && state.activeTurnConfirmed) return p;
+  }
+  return null;
+}
+function showHandoffGate(p, onConfirmed){
+  state.handoffCallback = onConfirmed;
+  document.getElementById("handoffTitleText").textContent = T().handoffPrompt(displayName(p));
+  document.getElementById("handoffOverlay").hidden = false;
+}
+function hideHandoffGate(){
+  document.getElementById("handoffOverlay").hidden = true;
+}
+
+// True when, if THIS player pots right now, they are guaranteed to end up the only
+// potter: nobody else has already potted, and nobody else is still left to decide.
+// Potting alone pays out nothing (see resolveShowdown), so this player gets no real
+// choice here — they must pass, exactly as if they couldn't afford the pot.
+function soloPotWouldBeEmpty(p){
+  var others = state.order.filter(function(o){ return o !== p; });
+  var anyoneElsePotted = others.some(function(o){ return o.status === "gepot"; });
+  var anyoneElseStillDeciding = others.some(function(o){ return o.status === "beslissen"; });
+  return !anyoneElsePotted && !anyoneElseStillDeciding;
+}
+
+function aiDecide(p){
+  var unseen = unseenDeckFor(p);
+  var equity = winProbability(p.cards, unseen);
+  var stillToAct = state.order.filter(function(o){ return o.status==="beslissen" || o.status==="gepot"; }).length - 1;
+  var opponents = Math.max(1, stillToAct);
+  var chanceToBeatAll = Math.pow(equity, opponents);
+  // Table stakes: a loser has to pay the full pot, so nobody — AI included — may pot
+  // more chips than they actually have. Can't cover it → automatic pass, whatever the odds.
+  var canAfford = p.chips >= state.pot;
+  // Nobody left to compete against → potting would pay out nothing, so don't bother.
+  var wouldBeAlone = soloPotWouldBeEmpty(p);
+  var decidesPot = canAfford && !wouldBeAlone && (chanceToBeatAll >= p.style.threshold || Math.random() < p.style.bluff);
+  p.status = decidesPot ? "gepot" : "gepast";
+  var t = T();
+  log(t.logAiDecision(displayName(p), t.styleLabel[p.style.key], decidesPot, Math.round(chanceToBeatAll*100)));
+}
+
+function showActionBar(p){
+  render();
+  document.getElementById("actionbar").classList.add("active");
+  var hand = evaluateHand(p.cards[0], p.cards[1]);
+  var canAffordPot = p.chips >= state.pot;
+  var noOneToCompete = soloPotWouldBeEmpty(p);
+  var canPot = canAffordPot && !noOneToCompete;
+  var potButton = document.getElementById("potBtn");
+  potButton.disabled = !canPot;
+  potButton.style.opacity = canPot ? "" : ".45";
+  potButton.style.cursor = canPot ? "" : "not-allowed";
+  var hintSuffix = !canAffordPot ? (" — " + T().cannotAffordPot)
+    : (noOneToCompete ? (" — " + T().noContestHint) : "");
+  document.getElementById("handHint").textContent = T().yourHand + handLabel(hand) + hintSuffix;
+  var fill = document.getElementById("timerfill");
+  fill.style.transition = "none";
+  fill.style.width = "100%";
+  void fill.offsetWidth;
+  fill.style.transition = "width 15s linear";
+  fill.style.width = "0%";
+  clearTimeout(state.timer);
+  state.timer = setTimeout(function(){ humanDecide(false); }, 15000);
+}
+function hideActionBar(){
+  document.getElementById("actionbar").classList.remove("active");
+  clearTimeout(state.timer);
+  var potButton = document.getElementById("potBtn");
+  potButton.disabled = false; potButton.style.opacity = ""; potButton.style.cursor = "";
+}
+function humanDecide(didPot){
+  var p = state.order[state.turnIndex];
+  // Defensive: never let a pot through that the player can't actually cover, or that
+  // would leave them as the sole potter with nobody to compete against — even if
+  // something tried to trigger it while the button was disabled.
+  if(didPot && p.chips < state.pot) didPot = false;
+  if(didPot && soloPotWouldBeEmpty(p)) didPot = false;
+  clearTimeout(state.timer);
+  hideActionBar();
+  p.status = didPot ? "gepot" : "gepast";
+  if(state.hotseat){
+    log(T().logPlayerDecision(displayName(p), didPot));
+  } else {
+    log(T().logHumanDecision(didPot));
+  }
+  state.turnIndex++;
+  state.activeTurnConfirmed = false;
+  render();
+  nextTurn();
+}
+
+function resolveShowdown(){
+  var potters = state.order.filter(function(p){ return p.status==="gepot"; });
+  state.roundActive = false;
+  var t = T();
+
+  if(potters.length === 0){
+    state.anteNextRound = true; // nobody potted: everyone antes again next round, so the pot keeps growing
+    var msg0 = t.logNobodyPots(state.ante);
+    log(msg0);
+    showResultOverlay({ title:t.resultNobodyPotsTitle, explain: msg0, lines: [] });
+    return;
+  }
+  if(potters.length === 1){
+    // Exactly one player potted and everyone else folded around them: a real win, since
+    // this player staked a claim no one else was willing to match — the "forced alone"
+    // case (nobody left to compete against AT THE MOMENT you'd decide) never reaches here
+    // at all, because soloPotWouldBeEmpty() disables potting for that player beforehand.
+    var solo = potters[0];
+    var wonAmount = state.pot;
+    solo.chips += state.pot;
+    state.anteNextRound = true; // the pot is fully paid out, so next round starts fresh
+    var msg1 = t.logSoloWin(displayName(solo), solo.isHuman, wonAmount);
+    log(msg1);
+    state.pot = 0;
+    // The pot is now genuinely empty: release anything held in reserve from an earlier
+    // pot cap, so it becomes the opening pot for the next round instead of staying parked.
+    if(state.reserve > 0){
+      state.pot = state.reserve;
+      state.reserve = 0;
+      log(T().logReserveReleased(state.pot));
+    }
+    showResultOverlay({
+      title: t.resultWinTitle(solo.isHuman, displayName(solo), wonAmount),
+      explain: msg1,
+      lines: [{ player: solo, label: t.cardsNotShown, isWinner: true, hideCards: true, delta: wonAmount }]
+    });
+    return;
+  }
+
+  var evals = potters.map(function(p){ return {p:p, hand: evaluateHand(p.cards[0], p.cards[1])}; });
+  var maxPower = Math.max.apply(null, evals.map(function(e){ return e.hand.power; }));
+  var winners = evals.filter(function(e){ return e.hand.power===maxPower; });
+  var losers = evals.filter(function(e){ return e.hand.power!==maxPower; });
+  var potAtStart = state.pot;
+
+  var reveal = evals.map(function(e){ return displayName(e.p)+" ("+showCards(e.p.cards)+" — "+handLabel(e.hand)+")"; }).join(", ");
+  log(t.logShowdown(reveal));
+
+  if(winners.length === 1){
+    var w = winners[0].p;
+    var winHand = winners[0].hand;
+    w.chips += potAtStart;
+    losers.forEach(function(e){ e.p.chips -= potAtStart; });
+    var carryPot = potAtStart * losers.length;
+
+    var lines = evals.map(function(e){
+      var isW = e.hand.power===maxPower;
+      return { player: e.p, label: handLabel(e.hand), isWinner: isW, delta: isW ? potAtStart : -potAtStart };
+    });
+
+    state.pot = carryPot;
+    state.anteNextRound = false; // the matched amount forms the new pot, so nobody antes separately
+    applyPotCap(); // may clamp state.pot and move the overflow into state.reserve, logging its own note
+
+    var loserNames = listNames(losers.map(function(e){ return e.p; }));
+    var bijleggenZin = losers.length > 1
+      ? t.logBijleggenMulti(loserNames, potAtStart)
+      : t.logBijleggenSingle(loserNames, potAtStart);
+    var msg2 = t.logSingleWinner(displayName(w), w.isHuman, potAtStart, handLabel(winHand), bijleggenZin, state.pot);
+    log(msg2);
+    showResultOverlay({
+      title: t.resultWinTitle(w.isHuman, displayName(w), potAtStart),
+      explain: msg2,
+      lines: lines
+    });
+  } else {
+    var winNames = winners.map(function(e){ return displayName(e.p); }).join(" & ");
+    var tieHand = winners[0].hand;
+    var allPotterNames = listNames(potters);
+    state.pot = potAtStart + potAtStart*potters.length;
+    potters.forEach(function(p){ p.chips -= potAtStart; });
+    state.anteNextRound = false; // everyone who potted already re-staked, which forms the next pot
+    applyPotCap(); // may clamp state.pot and move the overflow into state.reserve, logging its own note
+
+    var lines = evals.map(function(e){
+      return { player: e.p, label: handLabel(e.hand), isWinner: (e.hand.power===maxPower), delta: -potAtStart };
+    });
+
+    var legtZin = potters.length > 1
+      ? t.legtMulti(allPotterNames, potAtStart)
+      : t.legtSingle(allPotterNames, potAtStart);
+    var msg3 = t.logTie(winNames, handLabel(tieHand), legtZin, state.pot);
+    log(msg3);
+    showResultOverlay({ title:t.resultTieTitle, explain: msg3, lines: lines });
+  }
+}
+
+function showCards(cards){ return cards[0].rank+cards[0].suit+" "+cards[1].rank+cards[1].suit; }
+
+function listNames(players){
+  var names = players.map(function(p){ return displayName(p); });
+  if(names.length===0) return "";
+  if(names.length===1) return names[0];
+  return names.slice(0,-1).join(", ") + T().and + names[names.length-1];
+}
+
+function showResultOverlay(result){
+  render();
+  document.getElementById("resultTitle").textContent = result.title;
+  document.getElementById("resultExplain").textContent = result.explain;
+  var linesEl = document.getElementById("resultLines");
+  linesEl.innerHTML = "";
+  result.lines.forEach(function(line){
+    var row = document.createElement("div");
+    row.className = "result-line" + (line.isWinner ? " winner" : "");
+    var nameEl = document.createElement("div"); nameEl.className = "result-name";
+    nameEl.textContent = displayName(line.player);
+    row.appendChild(nameEl);
+    if(!line.hideCards && line.player.cards){
+      var cw = document.createElement("div"); cw.className = "result-cards";
+      cw.appendChild(cardEl(line.player.cards[0], true, false));
+      cw.appendChild(cardEl(line.player.cards[1], true, false));
+      row.appendChild(cw);
+    }
+    var labelEl = document.createElement("div"); labelEl.className = "result-label";
+    var deltaText = (typeof line.delta === "number") ? (" " + T().deltaChips(line.delta)) : "";
+    labelEl.textContent = line.label + deltaText;
+    row.appendChild(labelEl);
+    linesEl.appendChild(row);
+  });
+  refreshResultOverlayControls();
+  document.getElementById("resultOverlay").classList.add("active");
+}
+
+// Decides the continue-button wording only (nextRound vs seeStandings) — a display
+// heuristic; the real decision of what actually happens lives in continueToNextRound().
+function canContinueLabel(){
+  var t = T();
+  if(!state.hotseat){
+    return (state.players[0].chips < state.ante && realHumanCount() <= 1) ? t.seeStandingsBtn : t.nextRoundBtn;
+  }
+  var activeNow = state.players.filter(function(p){ return !p.sittingOut; });
+  var eligible = activeNow.filter(function(p){ return p.isHuman || p.chips >= state.ante; }).length;
+  return eligible >= 2 ? t.nextRoundBtn : t.seeStandingsBtn;
+}
+
+// A new real player may only join right here, between rounds — and only when the pot has
+// actually been paid out to 0, not merely when everyone is about to ante again. If a pot is
+// still carrying over (nobody potted last round, or a loser had to match it), joining in on
+// that would mean sharing in chips the newcomer never contributed to, so it stays blocked
+// until a round ends with the pot genuinely empty (a clean solo win, or a fresh session).
+function canAddPlayerNow(){
+  return !!(state && state.hotseat && state.pot === 0 && realHumanCount() < MAX_REAL_PLAYERS);
+}
+
+function refreshResultOverlayControls(){
+  document.getElementById("continueBtn").textContent = canContinueLabel();
+  document.getElementById("addPlayerBtn").hidden = !canAddPlayerNow();
+}
+
+function addPlayerMidSession(name){
+  if(!canAddPlayerNow()) return;
+  var finalName = (name || "").trim() || T().playerName(realHumanCount() + 1);
+  state.players.push({
+    id: "human" + state.players.length,
+    isHuman: true,
+    chips: state.startingChips,
+    sittingOut: false,
+    customName: finalName
+  });
+  log(T().logPlayerJoined(finalName));
+  updateMultiplayerControls();
+  render();
+}
+
+function continueToNextRound(){
+  document.getElementById("resultOverlay").classList.remove("active");
+  if(!state.hotseat){
+    var human = state.players[0];
+    if(human.chips < state.ante){
+      // Solo mode: nobody else to keep playing with, so the session ends here.
+      log(T().logNotEnoughAnte);
+      endSession();
+      return;
+    }
+    startRound();
+    return;
+  }
+  // Hotseat: every real player who can no longer afford the ante gets a private choice
+  // (buy chips, or sit out) behind their own hand-off gate, one at a time, before dealing.
+  state.pendingResolution = state.players.filter(function(p){
+    return p.isHuman && !p.sittingOut && p.chips < state.ante;
+  });
+  resolveNextPoorPlayer();
+}
+function resolveNextPoorPlayer(){
+  if(!state.pendingResolution || state.pendingResolution.length === 0){
+    var active = state.players.filter(function(p){ return !p.sittingOut && p.chips >= state.ante; });
+    if(active.length < 2){
+      log(T().logNotEnough);
+      endSession();
+      return;
+    }
+    startRound();
+    return;
+  }
+  var p = state.pendingResolution.shift();
+  if(p.sittingOut || p.chips >= state.ante){ resolveNextPoorPlayer(); return; }
+  render();
+  showHandoffGate(p, function(){ showTopUpOverlay(p); });
+}
+
+function showTopUpOverlay(forPlayer){
+  state.topUpTarget = forPlayer;
+  document.getElementById("topUpExplain").textContent = state.hotseat
+    ? T().topUpExplainNamed(displayName(forPlayer))
+    : T().topUpExplain;
+  document.getElementById("topUpOverlay").hidden = false;
+}
+function hideTopUpOverlay(){
+  document.getElementById("topUpOverlay").hidden = true;
+}
+function buyChipsAndContinue(){
+  var p = state.topUpTarget || state.players[0];
+  // No real payments exist in this prototype yet — this simulates the purchase so the
+  // flow can be tested. A real build wires this to the chip-pricing tiers and an actual
+  // store purchase instead of a flat top-up.
+  var amount = state.ante * 50;
+  p.chips += amount;
+  log(state.hotseat ? T().logSimPurchaseNamed(displayName(p), amount) : T().logSimPurchase(amount));
+  hideTopUpOverlay();
+  render();
+  if(state.hotseat){ resolveNextPoorPlayer(); } else { startRound(); }
+}
+function passAndContinue(){
+  var p = state.topUpTarget || state.players[0];
+  p.sittingOut = true;
+  log(state.hotseat ? T().logPassedNoChipsNamed(displayName(p)) : T().logPassedNoChips);
+  hideTopUpOverlay();
+  render();
+  if(state.hotseat){ resolveNextPoorPlayer(); } else { startRound(); }
+}
+
+function log(msg){
+  state.log.unshift(msg);
+  if(state.log.length>60) state.log.length=60;
+  renderLog();
+}
+
+/* ---------------- Rendering ---------------- */
+function cardEl(card, small, faceDown){
+  var div = document.createElement("div");
+  div.className = "playing-card" + (small?" small":"") + (faceDown?" back":"");
+  if(faceDown) return div;
+  var red = RED_SUITS[card.suit];
+  div.classList.add(red?"red":"black");
+  var top = document.createElement("div"); top.textContent = card.rank;
+  var mid = document.createElement("div"); mid.className="mid"; mid.textContent = card.suit;
+  div.appendChild(top); div.appendChild(mid);
+  return div;
+}
+
+function render(){
+  if(!state) return;
+  var t = T();
+  var revealed = getRevealedPlayer();
+
+  document.getElementById("balanceOut").textContent = revealed ? revealed.chips : "–";
+  document.getElementById("potOut").textContent = state.pot;
+  var reserveEl = document.getElementById("potReserveOut");
+  if(state.reserve > 0){
+    reserveEl.hidden = false;
+    reserveEl.textContent = T().potReserveNote(state.reserve);
+  } else {
+    reserveEl.hidden = true;
+  }
+
+  var opp = document.getElementById("opponents");
+  opp.innerHTML = "";
+  state.players.forEach(function(p){
+    if(revealed && p === revealed) return; // shown at the bottom instead
+    var seat = document.createElement("div"); seat.className="seat";
+    var name = document.createElement("div"); name.className="name"; name.textContent=displayName(p);
+    var chips = document.createElement("div"); chips.className="chips tabular"; chips.textContent=p.chips+t.chipsSuffix;
+    var cardsWrap = document.createElement("div"); cardsWrap.className="cards";
+    if(p.cards){
+      var showFace = !state.roundActive && p.status==="gepot";
+      cardsWrap.appendChild(cardEl(p.cards[0], true, !showFace));
+      cardsWrap.appendChild(cardEl(p.cards[1], true, !showFace));
+    }
+    var status = document.createElement("div");
+    var st = p.status || "wacht";
+    status.className = "status " + (st==="beslissen"?"beslissen":st==="gepot"?"gepot":"gepast");
+    status.textContent = st==="beslissen"?t.statusTurn:st==="gepot"?t.statusPot:st==="gepast"?t.statusPass:st==="zit uit"?t.statusSitOut:t.statusWait;
+    seat.appendChild(name); seat.appendChild(chips); seat.appendChild(cardsWrap); seat.appendChild(status);
+    opp.appendChild(seat);
+  });
+
+  var humanRowEl = document.getElementById("humanRow");
+  var hc = document.getElementById("humanCards");
+  hc.innerHTML = "";
+  if(revealed){
+    humanRowEl.hidden = false;
+    if(revealed.cards){
+      hc.appendChild(cardEl(revealed.cards[0], false, false));
+      hc.appendChild(cardEl(revealed.cards[1], false, false));
+    }
+    document.getElementById("humanNameLabel").textContent = displayName(revealed);
+    var sitBtn = document.getElementById("sitOutBtn");
+    if(!sitBtn.hidden) sitBtn.textContent = revealed.sittingOut ? t.sitBackInBtn : t.sitOutBtn;
+    var sitNote = document.getElementById("sitoutNote");
+    if(realHumanCount() > 1 && revealed.sittingOut){
+      sitNote.hidden = false;
+      sitNote.textContent = t.sitoutNote;
+    } else {
+      sitNote.hidden = true;
+    }
+  } else {
+    humanRowEl.hidden = true;
+  }
+}
+function renderLog(){
+  var el = document.getElementById("log");
+  el.innerHTML = "";
+  state.log.forEach(function(m){
+    var d = document.createElement("div"); d.className="log-entry"; d.textContent = m;
+    el.appendChild(d);
+  });
+}
+
+/* ---------------- Static text & language switching ---------------- */
+function applyStaticText(){
+  var t = T();
+  document.title = t.appName;
+  document.getElementById("appTitle").textContent = t.appName;
+  document.getElementById("taglineText").textContent = t.tagline;
+  document.getElementById("langBtn").textContent = currentLang === "nl" ? "EN" : "NL";
+  document.getElementById("balanceLabel").textContent = t.chips;
+  document.getElementById("pauseBtn").textContent = t.pauseBtn;
+  document.getElementById("stopBtn").textContent = t.stopBtn;
+  document.getElementById("ledeText").textContent = t.setupLede;
+  document.getElementById("modeLegend").textContent = t.modeLegend;
+  document.getElementById("modeSoloBtn").textContent = t.modeSoloLabel;
+  document.getElementById("modeHotseatBtn").textContent = t.modeHotseatLabel;
+  document.getElementById("anteLegend").textContent = t.anteLegend;
+  document.getElementById("anteChoices").setAttribute("aria-label", t.anteGroupLabel);
+  document.getElementById("anteLowBtn").textContent = t.anteLow;
+  document.getElementById("anteMidBtn").textContent = t.anteMid;
+  document.getElementById("anteHighBtn").textContent = t.anteHigh;
+  document.getElementById("oppLegend").textContent = t.oppLegend;
+  document.getElementById("oppChoices").setAttribute("aria-label", t.oppGroupLabel);
+  document.getElementById("playersLegend").textContent = t.playersLegend;
+  document.getElementById("playerCountChoices").setAttribute("aria-label", t.playersGroupLabel);
+  document.getElementById("namesLegend").textContent = t.namesLegend;
+  document.getElementById("hotseatAiLegend").textContent = t.hotseatAiLegend;
+  document.getElementById("hotseatAiChoices").setAttribute("aria-label", t.hotseatAiGroupLabel);
+  for(var i=1;i<=6;i++){
+    var inp = document.getElementById("nameInput"+i);
+    if(inp) inp.placeholder = t.playerName(i);
+  }
+  document.getElementById("startBtn").textContent = t.startBtn;
+  document.getElementById("setupNoteText").textContent = t.setupNote;
+  document.getElementById("potLabelText").textContent = t.pot;
+  document.getElementById("humanNameLabel").textContent = t.you;
+  document.getElementById("sitOutBtn").textContent = (function(){
+    var revealed = getRevealedPlayer();
+    return (revealed && revealed.sittingOut) ? t.sitBackInBtn : t.sitOutBtn;
+  })();
+  document.getElementById("passBtn").textContent = t.passBtn;
+  document.getElementById("potBtn").textContent = t.potBtn;
+  document.getElementById("logHeading").textContent = t.verloop;
+  document.getElementById("resetBtn").textContent = t.resetBtn;
+  document.getElementById("pauseTitleText").textContent = t.pauzeTitle;
+  document.getElementById("resumeBtn").textContent = t.resumeBtn;
+  document.getElementById("continueBtn").textContent = state ? canContinueLabel() : t.nextRoundBtn;
+  document.getElementById("backToMenuBtn").textContent = t.terugMenuBtn;
+  document.getElementById("topUpTitleText").textContent = t.topUpTitle;
+  document.getElementById("topUpExplain").textContent = t.topUpExplain;
+  document.getElementById("buyChipsBtn").textContent = t.buyChipsBtn;
+  document.getElementById("passForNowBtn").textContent = t.passForNowBtn;
+  document.getElementById("handoffConfirmBtn").textContent = t.handoffBtn;
+  document.getElementById("addPlayerBtn").textContent = t.addPlayerBtn;
+  document.getElementById("addPlayerTitleText").textContent = t.addPlayerTitle;
+  document.getElementById("addPlayerNameInput").placeholder = t.addPlayerNamePlaceholder;
+  document.getElementById("addPlayerConfirmBtn").textContent = t.addPlayerConfirmBtn;
+  document.getElementById("addPlayerCancelBtn").textContent = t.addPlayerCancelBtn;
+  document.getElementById("authIntroText").textContent = t.authIntroText;
+  document.getElementById("googleSignInBtn").textContent = t.googleSignInBtn;
+  document.getElementById("ageCheckExplainText").textContent = t.ageCheckExplainText;
+  document.getElementById("birthYearInput").placeholder = t.birthYearPlaceholder;
+  document.getElementById("ageCheckConfirmBtn").textContent = t.ageCheckConfirmBtn;
+  document.getElementById("signOutBtn").textContent = t.signOutBtn;
+  if(typeof account !== "undefined" && account.loaded) updateAccountBarText();
+}
+
+function renderEndScreen(){
+  if(!state) return;
+  var t = T();
+  var sorted = state.players.slice().sort(function(a,b){ return b.chips - a.chips; });
+  var listEl = document.getElementById("endList");
+  listEl.innerHTML = "";
+  sorted.forEach(function(p, i){
+    var row = document.createElement("div");
+    row.className = "end-row" + (p.isHuman ? " human" : "");
+    var rank = document.createElement("div"); rank.className = "end-rank"; rank.textContent = "#" + (i+1);
+    var name = document.createElement("div"); name.className = "end-name"; name.textContent = displayName(p);
+    var chips = document.createElement("div"); chips.className = "end-chips"; chips.textContent = p.chips + t.chipsSuffix;
+    row.appendChild(rank); row.appendChild(name); row.appendChild(chips);
+    listEl.appendChild(row);
+  });
+  var humanRank = sorted.findIndex(function(p){ return p.isHuman; }) + 1;
+  document.getElementById("endHeading").textContent =
+    humanRank === 1 ? t.endHeadingWin : t.endHeadingRank(humanRank, sorted.length);
+}
+
+function backToMenu(){
+  document.getElementById("endScreen").hidden = true;
+  document.getElementById("setup").style.display = "";
+}
+
+function endSession(){
+  if(state){
+    clearTimeout(state.timer); clearTimeout(state.aiTimeoutId); clearInterval(state.pauseInterval);
+    state.roundActive = false; state.paused = false;
+  }
+  hideActionBar();
+  hideHandoffGate();
+  document.getElementById("pauseOverlay").hidden = true;
+  document.getElementById("topUpOverlay").hidden = true;
+  document.getElementById("resultOverlay").classList.remove("active");
+  document.getElementById("tableWrap").classList.remove("active");
+  document.getElementById("stopBtn").hidden = true;
+  document.getElementById("pauseBtn").hidden = true;
+  document.getElementById("sitOutBtn").hidden = true;
+  renderEndScreen();
+  document.getElementById("endScreen").hidden = false;
+}
+
+/* ---------------- Wiring ---------------- */
+var chosenMode = "solo", chosenAnte = 10, chosenOpp = 3, chosenPlayerCount = 2, chosenHotseatAi = 0;
+
+document.getElementById("langBtn").addEventListener("click", function(){
+  currentLang = currentLang === "nl" ? "en" : "nl";
+  try{ localStorage.setItem("bluffpot_lang", currentLang); }catch(e){}
+  applyStaticText();
+  if(state){
+    render();
+    renderLog();
+    if(!document.getElementById("endScreen").hidden) renderEndScreen();
+  }
+});
+document.getElementById("modeChoices").addEventListener("click", function(e){
+  var btn = e.target.closest(".choice"); if(!btn) return;
+  this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
+  btn.setAttribute("aria-pressed","true");
+  chosenMode = btn.dataset.mode;
+  document.getElementById("soloOppField").hidden = (chosenMode === "hotseat");
+  document.getElementById("hotseatFields").hidden = (chosenMode !== "hotseat");
+});
+document.getElementById("anteChoices").addEventListener("click", function(e){
+  var btn = e.target.closest(".choice"); if(!btn) return;
+  this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
+  btn.setAttribute("aria-pressed","true");
+  chosenAnte = Number(btn.dataset.ante);
+});
+document.getElementById("oppChoices").addEventListener("click", function(e){
+  var btn = e.target.closest(".choice"); if(!btn) return;
+  this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
+  btn.setAttribute("aria-pressed","true");
+  chosenOpp = Number(btn.dataset.opp);
+});
+document.getElementById("playerCountChoices").addEventListener("click", function(e){
+  var btn = e.target.closest(".choice"); if(!btn) return;
+  this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
+  btn.setAttribute("aria-pressed","true");
+  chosenPlayerCount = Number(btn.dataset.players);
+  for(var i=1;i<=6;i++){ document.getElementById("nameRow"+i).hidden = (i > chosenPlayerCount); }
+});
+document.getElementById("hotseatAiChoices").addEventListener("click", function(e){
+  var btn = e.target.closest(".choice"); if(!btn) return;
+  this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
+  btn.setAttribute("aria-pressed","true");
+  chosenHotseatAi = Number(btn.dataset.hsai);
+});
+document.getElementById("startBtn").addEventListener("click", function(){
+  document.getElementById("setup").style.display = "none";
+  document.getElementById("endScreen").hidden = true;
+  document.getElementById("tableWrap").classList.add("active");
+  document.getElementById("stopBtn").hidden = false;
+  if(chosenMode === "hotseat"){
+    var names = [];
+    for(var i=1;i<=chosenPlayerCount;i++){
+      var val = document.getElementById("nameInput"+i).value.trim();
+      names.push(val || T().playerName(i));
+    }
+    newGame({ ante: chosenAnte, hotseat:true, playerNames:names, aiCount: chosenHotseatAi });
+  } else {
+    newGame({ ante: chosenAnte, hotseat:false, oppCount: chosenOpp });
+  }
+  startRound();
+});
+document.getElementById("resetBtn").addEventListener("click", function(){
+  hideActionBar(); hideHandoffGate();
+  document.getElementById("topUpOverlay").hidden = true;
+  document.getElementById("resultOverlay").classList.remove("active");
+  if(state && state.hotseat){
+    var names = state.players.filter(function(p){ return p.isHuman; }).map(displayName);
+    var aiCount = state.players.filter(function(p){ return !p.isHuman; }).length;
+    newGame({ ante: state.ante, hotseat:true, playerNames:names, aiCount: aiCount });
+  } else {
+    newGame({ ante: chosenAnte, hotseat:false, oppCount: chosenOpp });
+  }
+  startRound();
+});
+document.getElementById("potBtn").addEventListener("click", function(){ humanDecide(true); });
+document.getElementById("passBtn").addEventListener("click", function(){ humanDecide(false); });
+document.getElementById("continueBtn").addEventListener("click", continueToNextRound);
+document.getElementById("stopBtn").addEventListener("click", endSession);
+document.getElementById("backToMenuBtn").addEventListener("click", backToMenu);
+document.getElementById("pauseBtn").addEventListener("click", function(){
+  var revealed = getRevealedPlayer();
+  pauseGame(revealed ? displayName(revealed) : T().someone);
+});
+document.getElementById("resumeBtn").addEventListener("click", resumeGame);
+document.getElementById("sitOutBtn").addEventListener("click", toggleSitOut);
+document.getElementById("buyChipsBtn").addEventListener("click", buyChipsAndContinue);
+document.getElementById("passForNowBtn").addEventListener("click", passAndContinue);
+document.getElementById("handoffConfirmBtn").addEventListener("click", function(){
+  var cb = state.handoffCallback; state.handoffCallback = null;
+  hideHandoffGate();
+  if(cb) cb();
+});
+document.getElementById("addPlayerBtn").addEventListener("click", function(){
+  document.getElementById("resultOverlay").classList.remove("active");
+  document.getElementById("addPlayerNameInput").value = "";
+  document.getElementById("addPlayerOverlay").hidden = false;
+  document.getElementById("addPlayerNameInput").focus();
+});
+document.getElementById("addPlayerConfirmBtn").addEventListener("click", function(){
+  addPlayerMidSession(document.getElementById("addPlayerNameInput").value);
+  document.getElementById("addPlayerOverlay").hidden = true;
+  refreshResultOverlayControls();
+  document.getElementById("resultOverlay").classList.add("active");
+});
+document.getElementById("addPlayerCancelBtn").addEventListener("click", function(){
+  document.getElementById("addPlayerOverlay").hidden = true;
+  document.getElementById("resultOverlay").classList.add("active");
+});
+
+/* ---------------- Account layer (Firebase) ----------------
+   This is a separate, persistent balance tied to a Google account — distinct from `state`,
+   which is just the chips in play at one local table/session. Nothing here touches `state`
+   yet: signing in only gets you to the existing setup screen with your account balance shown;
+   actually spending/crediting that balance against a table (the "buy-in" model) is a later step. */
+var account = { uid:null, chips:0, birthYear:null, loaded:false };
+var fb = null;
+
+function showAuthScreen(){
+  document.getElementById("authScreen").hidden = false;
+  document.getElementById("ageCheckScreen").hidden = true;
+  document.getElementById("setup").style.display = "none";
+  document.getElementById("accountBar").hidden = true;
+  account.loaded = false;
+}
+function showAgeCheck(){
+  document.getElementById("authScreen").hidden = true;
+  document.getElementById("ageCheckScreen").hidden = false;
+  document.getElementById("birthYearInput").value = "";
+}
+function updateAccountBarText(){
+  document.getElementById("accountBalanceText").textContent = T().accountBalance(account.chips);
+}
+function showSetupAuthenticated(){
+  document.getElementById("authScreen").hidden = true;
+  document.getElementById("ageCheckScreen").hidden = true;
+  document.getElementById("setup").style.display = "";
+  document.getElementById("accountBar").hidden = false;
+  account.loaded = true;
+  updateAccountBarText();
+}
+function todayStamp(){ return new Date().toISOString().slice(0,10); } // YYYY-MM-DD, UTC calendar day
+
+function showAuthError(code){
+  var el = document.getElementById("authStatusText");
+  el.hidden = false; el.className = "auth-status error";
+  el.textContent = T().authError(code);
+}
+
+function loadOrCreateAccount(uid){
+  var ref = fb.doc(fb.db, "users", uid);
+  fb.getDoc(ref).then(function(snap){
+    if(!snap.exists()){ showAgeCheck(); return; }
+    var data = snap.data();
+    account.chips = data.chips || 0;
+    account.birthYear = data.birthYear || null;
+    maybeGrantDailyBonus(ref, data);
+  }).catch(function(err){
+    showAuthError(err && err.code ? err.code : String(err));
+    showAuthScreen();
+  });
+}
+function createAccountDoc(uid, birthYear){
+  var ref = fb.doc(fb.db, "users", uid);
+  var data = {
+    chips: STARTING_ACCOUNT_CHIPS, birthYear: birthYear,
+    createdAt: fb.serverTimestamp(), lastDailyBonusAt: todayStamp()
+  };
+  fb.setDoc(ref, data).then(function(){
+    account.chips = STARTING_ACCOUNT_CHIPS;
+    account.birthYear = birthYear;
+    showSetupAuthenticated();
+  }).catch(function(err){
+    var el = document.getElementById("ageCheckErrorText");
+    el.hidden = false; el.textContent = T().authError(err && err.code ? err.code : String(err));
+  });
+}
+function maybeGrantDailyBonus(ref, data){
+  var today = todayStamp();
+  if(data.lastDailyBonusAt === today){ showSetupAuthenticated(); return; }
+  fb.updateDoc(ref, { chips: fb.increment(DAILY_BONUS_CHIPS), lastDailyBonusAt: today }).then(function(){
+    account.chips += DAILY_BONUS_CHIPS;
+    showSetupAuthenticated();
+    var noteEl = document.getElementById("dailyBonusNote");
+    noteEl.hidden = false;
+    noteEl.textContent = T().dailyBonusGranted(DAILY_BONUS_CHIPS);
+  }).catch(function(){
+    showSetupAuthenticated(); // non-fatal: just skip the bonus this time rather than blocking the menu
+  });
+}
+
+function initFirebaseAuthUI(){
+  fb = window.BluffPotFirebase;
+  fb.onAuthStateChanged(fb.auth, function(user){
+    if(!user){ account.uid = null; showAuthScreen(); return; }
+    if(account.uid === user.uid && account.loaded) return; // benign re-fire, already handled
+    account.uid = user.uid;
+    loadOrCreateAccount(user.uid);
+  });
+  // A popup-based sign-in failed with a generic auth/internal-error for some viewers (likely
+  // third-party-cookie/extension interference with the popup), so this uses a full-page
+  // redirect instead: it leaves for Google's sign-in page and comes straight back here,
+  // without needing a second window at all. getRedirectResult() surfaces any error from that
+  // round trip (a success is picked up by onAuthStateChanged above, same as before).
+  fb.getRedirectResult(fb.auth).catch(function(err){
+    showAuthError(err && err.code ? err.code : String(err));
+  });
+  document.getElementById("googleSignInBtn").addEventListener("click", function(){
+    document.getElementById("authStatusText").hidden = true;
+    fb.signInWithRedirect(fb.auth, new fb.GoogleAuthProvider()).catch(function(err){
+      showAuthError(err && err.code ? err.code : String(err));
+    });
+  });
+  document.getElementById("signOutBtn").addEventListener("click", function(){
+    fb.signOut(fb.auth);
+  });
+  document.getElementById("ageCheckConfirmBtn").addEventListener("click", function(){
+    var errEl = document.getElementById("ageCheckErrorText");
+    errEl.hidden = true;
+    var year = parseInt(document.getElementById("birthYearInput").value, 10);
+    var thisYear = new Date().getFullYear();
+    if(!year || year < 1900 || year > thisYear){
+      errEl.hidden = false; errEl.textContent = T().ageCheckInvalid; return;
+    }
+    if(thisYear - year < MIN_ACCOUNT_AGE){
+      errEl.hidden = false; errEl.textContent = T().ageCheckTooYoung; return;
+    }
+    createAccountDoc(account.uid, year);
+  });
+}
+var firebaseReadyTimeout = setTimeout(function(){
+  if(!window.BluffPotFirebase) showAuthError("timeout");
+}, 6000);
+if(window.BluffPotFirebase){
+  clearTimeout(firebaseReadyTimeout);
+  initFirebaseAuthUI();
+} else {
+  window.addEventListener("bluffpot-firebase-ready", function(){
+    clearTimeout(firebaseReadyTimeout);
+    initFirebaseAuthUI();
+  }, { once:true });
+}
+
+applyStaticText();
+
+/* Keep state (and the chosen language) across a hot republish while a viewer has the page open. */
+function snapshotState(){ return { state: state, lang: currentLang }; }
+function bootFrom(data){
+  if(data && data.lang){ currentLang = data.lang; applyStaticText(); }
+  if(data && data.state){ state = data.state; render(); renderLog(); }
+}
+if(window.claude && window.claude.hot){
+  window.claude.hot.snapshot(snapshotState);
+  if(window.claude.hot.ready) window.claude.hot.ready(function(data){ bootFrom(data); });
+}
+})();
+</script>
