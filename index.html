@@ -175,7 +175,8 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
       <h1 id="appTitle">Bluff Pot</h1>
       <div class="tagline" id="taglineText"></div>
     </div>
-    <div class="balance"><span id="balanceLabel">chips</span> <b class="tabular" id="balanceOut">0</b></div>
+    <div class="balance"><span id="balanceLabel">Table</span> <b class="tabular" id="balanceOut">0</b></div>
+    <div class="balance account-balance-topbar" id="accountBalanceTopbar" hidden><span id="accountBalanceTopLabel">Account</span> <b class="tabular" id="accountBalanceTopOut">0</b></div>
     <button class="ghost" id="langBtn" title="Switch language">EN</button>
     <button class="ghost" id="pauseBtn" hidden>Pause</button>
     <button class="ghost" id="stopBtn" hidden>Stop</button>
@@ -196,7 +197,6 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 
   <section class="card setup" id="setup" style="display:none;">
     <div class="account-bar" id="accountBar" hidden>
-      <span id="accountBalanceText"></span>
       <span class="auth-status" id="dailyBonusNote" hidden></span>
       <button class="ghost tiny" id="signOutBtn">Sign out</button>
     </div>
@@ -428,6 +428,7 @@ var LANG = {
     appName: "Bluff Pot",
     tagline: "naar het Nederlandse kaartspel Potten en Passen",
     chips: "chips", chipsSuffix: " chips",
+    tableLabel: "Tafel", accountLabel: "Account",
     pauseBtn: "Pauze", stopBtn: "Stoppen",
     setupLede: "Speel solo tegen het systeem, of samen om één toestel heen — naar het Nederlandse kaartspel Potten en Passen. De tegenstanders rekenen hun winkans echt uit op basis van de 52 kaarten, geen willekeur.",
     modeLegend: "Spelmodus", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Om de beurt op dit toestel",
@@ -535,6 +536,7 @@ var LANG = {
     appName: "Bluff Pot",
     tagline: "based on the Dutch card game Potten en Passen",
     chips: "chips", chipsSuffix: " chips",
+    tableLabel: "Table", accountLabel: "Account",
     pauseBtn: "Pause", stopBtn: "Stop",
     setupLede: "Play solo against the system, or together around one device — based on the Dutch card game Potten en Passen. Opponents calculate their real win chance from the actual 52 cards, no randomness.",
     modeLegend: "Game mode", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Together on this device",
@@ -1371,7 +1373,8 @@ function applyStaticText(){
   document.getElementById("appTitle").textContent = t.appName;
   document.getElementById("taglineText").textContent = t.tagline;
   document.getElementById("langBtn").textContent = currentLang === "nl" ? "EN" : "NL";
-  document.getElementById("balanceLabel").textContent = t.chips;
+  document.getElementById("balanceLabel").textContent = t.tableLabel;
+  document.getElementById("accountBalanceTopLabel").textContent = t.accountLabel;
   document.getElementById("pauseBtn").textContent = t.pauseBtn;
   document.getElementById("stopBtn").textContent = t.stopBtn;
   document.getElementById("ledeText").textContent = t.setupLede;
@@ -1645,7 +1648,11 @@ function showAgeCheck(){
   document.getElementById("birthYearInput").value = "";
 }
 function updateAccountBarText(){
-  document.getElementById("accountBalanceText").textContent = T().accountBalance(account.chips);
+  // Shown in the top bar, always (both on the setup screen and during play), separate from
+  // the "Table" number next to it — the account balance is the persistent total; the table
+  // number is only this table's current stack. See the buy-in model.
+  document.getElementById("accountBalanceTopbar").hidden = false;
+  document.getElementById("accountBalanceTopOut").textContent = account.chips;
 }
 /* Buy-in UI: lets the signed-in account holder pick how many chips (out of their persistent
    account balance) they bring to this table, per the buy-in model — table wins/losses only
