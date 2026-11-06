@@ -1655,17 +1655,17 @@ function initFirebaseAuthUI(){
     account.uid = user.uid;
     loadOrCreateAccount(user.uid);
   });
-  // A popup-based sign-in failed with a generic auth/internal-error for some viewers (likely
-  // third-party-cookie/extension interference with the popup), so this uses a full-page
-  // redirect instead: it leaves for Google's sign-in page and comes straight back here,
-  // without needing a second window at all. getRedirectResult() surfaces any error from that
-  // round trip (a success is picked up by onAuthStateChanged above, same as before).
-  fb.getRedirectResult(fb.auth).catch(function(err){
-    showAuthError(err && err.code ? err.code : String(err));
-  });
+  // A full-page redirect was tried first, but on a custom domain (bluffpot.area-53.com) that
+  // differs from Firebase's own authDomain (bluff-pot.firebaseapp.com), getRedirectResult()
+  // can silently resolve to "no user" with no error at all if the browser's storage/cookie
+  // rules prevent the two domains from exchanging the pending-sign-in state across the full
+  // navigation round trip. A popup keeps everything in one script context (no cross-domain
+  // navigation to correlate afterwards), which is far more reliable here — and the earlier
+  // auth/internal-error we saw from a popup was specific to running inside the Claude Artifact
+  // sandbox iframe, which no longer applies on a real, normal website.
   document.getElementById("googleSignInBtn").addEventListener("click", function(){
     document.getElementById("authStatusText").hidden = true;
-    fb.signInWithRedirect(fb.auth, new fb.GoogleAuthProvider()).catch(function(err){
+    fb.signInWithPopup(fb.auth, new fb.GoogleAuthProvider()).catch(function(err){
       showAuthError(err && err.code ? err.code : String(err));
     });
   });
