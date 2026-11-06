@@ -1458,6 +1458,9 @@ function backToMenu(){
   document.getElementById("endScreen").hidden = true;
   document.getElementById("setup").style.display = "";
   document.getElementById("startBtn").disabled = false;
+  // The "Table" number at the top is this table's stack; once you've left it (chips already
+  // credited back to the account), there's no active table stack left to show.
+  document.getElementById("balanceOut").textContent = "0";
   updateBuyInUI();
 }
 
@@ -1590,6 +1593,7 @@ document.getElementById("resetBtn").addEventListener("click", function(){
   creditBackAccountPlayer();
   document.getElementById("setup").style.display = "";
   document.getElementById("startBtn").disabled = false;
+  document.getElementById("balanceOut").textContent = "0";
   updateBuyInUI();
 });
 document.getElementById("potBtn").addEventListener("click", function(){ humanDecide(true); });
