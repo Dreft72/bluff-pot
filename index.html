@@ -1454,6 +1454,7 @@ function renderEndScreen(){
 function backToMenu(){
   document.getElementById("endScreen").hidden = true;
   document.getElementById("setup").style.display = "";
+  document.getElementById("startBtn").disabled = false;
   updateBuyInUI();
 }
 
@@ -1526,6 +1527,11 @@ document.getElementById("hotseatAiChoices").addEventListener("click", function(e
   chosenHotseatAi = Number(btn.dataset.hsai);
 });
 document.getElementById("startBtn").addEventListener("click", function(){
+  // Guards against a fast double-click firing this handler twice (which would deduct the
+  // buy-in from the account balance twice) — disabled immediately once a valid start proceeds,
+  // and re-enabled wherever the setup screen is shown again (showSetupAuthenticated, backToMenu,
+  // the resetBtn handler).
+  if(this.disabled) return;
   var buyInInput = document.getElementById("buyInInput");
   var buyIn = parseInt(buyInInput.value, 10);
   var errEl = document.getElementById("buyInErrorText");
@@ -1536,6 +1542,7 @@ document.getElementById("startBtn").addEventListener("click", function(){
   if(buyIn > account.chips){
     errEl.hidden = false; errEl.textContent = T().buyInErrorInsufficient; return;
   }
+  this.disabled = true;
   document.getElementById("setup").style.display = "none";
   document.getElementById("endScreen").hidden = true;
   document.getElementById("tableWrap").classList.add("active");
@@ -1579,6 +1586,7 @@ document.getElementById("resetBtn").addEventListener("click", function(){
   // return from Stop. It no longer jumps straight into a new game.
   creditBackAccountPlayer();
   document.getElementById("setup").style.display = "";
+  document.getElementById("startBtn").disabled = false;
   updateBuyInUI();
 });
 document.getElementById("potBtn").addEventListener("click", function(){ humanDecide(true); });
@@ -1667,6 +1675,7 @@ function showSetupAuthenticated(){
   document.getElementById("ageCheckScreen").hidden = true;
   document.getElementById("setup").style.display = "";
   document.getElementById("accountBar").hidden = false;
+  document.getElementById("startBtn").disabled = false;
   account.loaded = true;
   updateAccountBarText();
   updateBuyInUI();
