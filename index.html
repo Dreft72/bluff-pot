@@ -262,6 +262,13 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
       </div>
     </fieldset>
 
+    <fieldset id="buyInField">
+      <legend id="buyInLegend">Your buy-in for this table</legend>
+      <p class="auth-status" id="buyInBalanceNote"></p>
+      <input class="name-input" type="number" id="buyInInput" min="1" step="1" inputmode="numeric">
+      <p class="auth-status error" id="buyInErrorText" hidden></p>
+    </fieldset>
+
     <button class="primary" id="startBtn">Start game</button>
     <p class="note" id="setupNoteText"></p>
   </section>
@@ -423,7 +430,7 @@ var LANG = {
     chips: "chips", chipsSuffix: " chips",
     pauseBtn: "Pauze", stopBtn: "Stoppen",
     setupLede: "Speel solo tegen het systeem, of samen om één toestel heen — naar het Nederlandse kaartspel Potten en Passen. De tegenstanders rekenen hun winkans echt uit op basis van de 52 kaarten, geen willekeur.",
-    modeLegend: "Spelmodus", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Samen op dit toestel",
+    modeLegend: "Spelmodus", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Om de beurt op dit toestel",
     anteLegend: "Tafelinzet (ante)", anteGroupLabel: "Kies de ante",
     anteLow: "Laag · 10", anteMid: "Midden · 50", anteHigh: "Hoog · 100",
     oppLegend: "Aantal tegenstanders", oppGroupLabel: "Kies het aantal tegenstanders",
@@ -431,7 +438,12 @@ var LANG = {
     namesLegend: "Namen (voor het doorgeven van het toestel)",
     hotseatAiLegend: "AI-tegenstanders erbij (optioneel)", hotseatAiGroupLabel: "Kies het aantal AI-tegenstanders",
     startBtn: "Start spel",
-    setupNote: "Prototype: chips zijn tijdelijk speelgeld voor deze sessie en resetten bij het herladen van de pagina. Echte chips-aankoop en opslag volgen in een latere versie.",
+    buyInLegend: "Jouw inzet voor deze tafel",
+    buyInBalanceNote: function(balance){ return "Je saldo: " + balance + " chips. Wat je hier kiest neem je mee naar tafel; de rest blijft op je account staan."; },
+    buyInErrorMin: function(ante){ return "Kies minstens " + ante + " chips (de gekozen ante)."; },
+    buyInErrorInsufficient: "Je hebt niet genoeg saldo voor dit bedrag.",
+    accountCreditedNote: function(amount){ return "Je overgebleven " + amount + " chips zijn terug op je account gezet."; },
+    setupNote: "Je accountsaldo blijft bewaard tussen sessies. De chips die je hierboven als inzet kiest, neem je mee naar deze tafel; wat je overhoudt gaat terug naar je saldo zodra je stopt.",
     you: "Jij",
     sitOutBtn: "Zit ik uit", sitBackInBtn: "Weer meespelen",
     sitoutNote: "Je zit er even uit — je doet niet mee en betaalt niets totdat je weer meespeelt.",
@@ -533,7 +545,12 @@ var LANG = {
     namesLegend: "Names (for passing the device around)",
     hotseatAiLegend: "AI opponents too (optional)", hotseatAiGroupLabel: "Choose the number of AI opponents",
     startBtn: "Start game",
-    setupNote: "Prototype: chips are temporary play money for this session and reset when the page reloads. Real chip purchases and storage follow in a later version.",
+    buyInLegend: "Your buy-in for this table",
+    buyInBalanceNote: function(balance){ return "Your balance: " + balance + " chips. What you pick here comes to the table with you; the rest stays on your account."; },
+    buyInErrorMin: function(ante){ return "Pick at least " + ante + " chips (the chosen ante)."; },
+    buyInErrorInsufficient: "You don't have enough balance for that amount.",
+    accountCreditedNote: function(amount){ return "Your remaining " + amount + " chips were credited back to your account."; },
+    setupNote: "Your account balance is kept between sessions. The chips you pick above as your buy-in come to this table with you; whatever you have left goes back to your balance when you stop.",
     you: "You",
     sitOutBtn: "Sit out", sitBackInBtn: "Rejoin",
     sitoutNote: "You're sitting out — you don't take part and pay nothing until you rejoin.",
@@ -1378,7 +1395,9 @@ function applyStaticText(){
     if(inp) inp.placeholder = t.playerName(i);
   }
   document.getElementById("startBtn").textContent = t.startBtn;
+  document.getElementById("buyInLegend").textContent = t.buyInLegend;
   document.getElementById("setupNoteText").textContent = t.setupNote;
+  if(typeof account !== "undefined" && account.loaded) updateBuyInUI();
   document.getElementById("potLabelText").textContent = t.pot;
   document.getElementById("humanNameLabel").textContent = t.you;
   document.getElementById("sitOutBtn").textContent = (function(){
@@ -1435,6 +1454,7 @@ function renderEndScreen(){
 function backToMenu(){
   document.getElementById("endScreen").hidden = true;
   document.getElementById("setup").style.display = "";
+  updateBuyInUI();
 }
 
 function endSession(){
@@ -1451,6 +1471,9 @@ function endSession(){
   document.getElementById("stopBtn").hidden = true;
   document.getElementById("pauseBtn").hidden = true;
   document.getElementById("sitOutBtn").hidden = true;
+  // Leaving the table: whatever the account-linked player still has on the table goes back
+  // to their persistent account balance (table wins/losses never touched that balance directly).
+  creditBackAccountPlayer();
   renderEndScreen();
   document.getElementById("endScreen").hidden = false;
 }
@@ -1481,6 +1504,7 @@ document.getElementById("anteChoices").addEventListener("click", function(e){
   this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
   btn.setAttribute("aria-pressed","true");
   chosenAnte = Number(btn.dataset.ante);
+  updateBuyInUI();
 });
 document.getElementById("oppChoices").addEventListener("click", function(e){
   var btn = e.target.closest(".choice"); if(!btn) return;
@@ -1502,6 +1526,16 @@ document.getElementById("hotseatAiChoices").addEventListener("click", function(e
   chosenHotseatAi = Number(btn.dataset.hsai);
 });
 document.getElementById("startBtn").addEventListener("click", function(){
+  var buyInInput = document.getElementById("buyInInput");
+  var buyIn = parseInt(buyInInput.value, 10);
+  var errEl = document.getElementById("buyInErrorText");
+  errEl.hidden = true;
+  if(!buyIn || buyIn < chosenAnte){
+    errEl.hidden = false; errEl.textContent = T().buyInErrorMin(chosenAnte); return;
+  }
+  if(buyIn > account.chips){
+    errEl.hidden = false; errEl.textContent = T().buyInErrorInsufficient; return;
+  }
   document.getElementById("setup").style.display = "none";
   document.getElementById("endScreen").hidden = true;
   document.getElementById("tableWrap").classList.add("active");
@@ -1513,23 +1547,39 @@ document.getElementById("startBtn").addEventListener("click", function(){
       names.push(val || T().playerName(i));
     }
     newGame({ ante: chosenAnte, hotseat:true, playerNames:names, aiCount: chosenHotseatAi });
+    accountTablePlayerId = "human0";
   } else {
     newGame({ ante: chosenAnte, hotseat:false, oppCount: chosenOpp });
+    accountTablePlayerId = "human";
   }
+  // Only the signed-in account holder buys in from their persistent balance; other local
+  // (pass-and-play) hotseat players keep the free starting allowance newGame() already gave them.
+  account.chips -= buyIn;
+  updateAccountBarText();
+  if(fb && account.uid){
+    var buyInRef = fb.doc(fb.db, "users", account.uid);
+    fb.updateDoc(buyInRef, { chips: fb.increment(-buyIn) }).catch(function(){});
+  }
+  var accountPlayer = state.players.filter(function(p){ return p.id === accountTablePlayerId; })[0];
+  if(accountPlayer) accountPlayer.chips = buyIn;
+  render();
   startRound();
 });
 document.getElementById("resetBtn").addEventListener("click", function(){
   hideActionBar(); hideHandoffGate();
   document.getElementById("topUpOverlay").hidden = true;
   document.getElementById("resultOverlay").classList.remove("active");
-  if(state && state.hotseat){
-    var names = state.players.filter(function(p){ return p.isHuman; }).map(displayName);
-    var aiCount = state.players.filter(function(p){ return !p.isHuman; }).length;
-    newGame({ ante: state.ante, hotseat:true, playerNames:names, aiCount: aiCount });
-  } else {
-    newGame({ ante: chosenAnte, hotseat:false, oppCount: chosenOpp });
-  }
-  startRound();
+  document.getElementById("tableWrap").classList.remove("active");
+  document.getElementById("stopBtn").hidden = true;
+  document.getElementById("pauseBtn").hidden = true;
+  document.getElementById("sitOutBtn").hidden = true;
+  document.getElementById("endScreen").hidden = true;
+  // "New session" leaves the current table — credit whatever's left on it back to the
+  // account, then let the player choose a fresh buy-in on the setup screen, same as a normal
+  // return from Stop. It no longer jumps straight into a new game.
+  creditBackAccountPlayer();
+  document.getElementById("setup").style.display = "";
+  updateBuyInUI();
 });
 document.getElementById("potBtn").addEventListener("click", function(){ humanDecide(true); });
 document.getElementById("passBtn").addEventListener("click", function(){ humanDecide(false); });
@@ -1589,6 +1639,29 @@ function showAgeCheck(){
 function updateAccountBarText(){
   document.getElementById("accountBalanceText").textContent = T().accountBalance(account.chips);
 }
+/* Buy-in UI: lets the signed-in account holder pick how many chips (out of their persistent
+   account balance) they bring to this table, per the buy-in model — table wins/losses only
+   touch the table stack; the remainder is credited back to the account when they leave the
+   table (see creditBackAccountPlayer). Only the signed-in player does a buy-in; other local
+   hotseat players (pass-and-play, no account of their own) keep the free starting allowance. */
+function updateBuyInUI(){
+  if(!account.loaded) return;
+  var input = document.getElementById("buyInInput");
+  var min = Math.min(chosenAnte, account.chips || 0);
+  input.min = min || 1;
+  input.max = account.chips;
+  if(input.value === ""){
+    input.value = account.chips;
+  } else {
+    var current = parseInt(input.value, 10);
+    if(isNaN(current)) current = account.chips;
+    if(current > account.chips) current = account.chips;
+    if(current < min) current = min;
+    input.value = current;
+  }
+  document.getElementById("buyInBalanceNote").textContent = T().buyInBalanceNote(account.chips);
+  document.getElementById("buyInErrorText").hidden = true;
+}
 function showSetupAuthenticated(){
   document.getElementById("authScreen").hidden = true;
   document.getElementById("ageCheckScreen").hidden = true;
@@ -1596,6 +1669,27 @@ function showSetupAuthenticated(){
   document.getElementById("accountBar").hidden = false;
   account.loaded = true;
   updateAccountBarText();
+  updateBuyInUI();
+}
+/* The current table's account-linked player (the signed-in human — "human" in solo mode,
+   "human1" in hotseat, see startBtn/resetBtn below), and how much of their table chips still
+   needs crediting back to the account when they leave this table. Null when no table bought
+   in from the account is currently active (e.g. before the first game, or after credit-back). */
+var accountTablePlayerId = null;
+function creditBackAccountPlayer(){
+  if(!accountTablePlayerId || !state) return;
+  var p = state.players.filter(function(pl){ return pl.id === accountTablePlayerId; })[0];
+  var amount = p ? p.chips : 0;
+  accountTablePlayerId = null;
+  if(amount > 0){
+    account.chips += amount;
+    updateAccountBarText();
+    if(fb && account.uid){
+      var ref = fb.doc(fb.db, "users", account.uid);
+      fb.updateDoc(ref, { chips: fb.increment(amount) }).catch(function(){});
+    }
+  }
+  return amount;
 }
 function todayStamp(){ return new Date().toISOString().slice(0,10); } // YYYY-MM-DD, UTC calendar day
 
