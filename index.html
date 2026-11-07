@@ -622,6 +622,7 @@ var LANG = {
     logEveryoneAnte: function(ante,pot){ return "Iedereen zet " + ante + " chips bij. Pot staat nu op " + pot + "."; },
     logPotCarries: function(pot){ return "De pot staat al op " + pot + " chips — niemand hoeft deze ronde opnieuw in te zetten."; },
     logAiDecision: function(name, style, didPot, pct){ return name + " (" + style + ") " + (didPot?"pot.":"past.") + " [geschatte winkans " + pct + "%]"; },
+    logAiStyleSwitch: function(name, style){ return name + " wisselt van tactiek: speelt nu " + style + "."; },
     logHumanDecision: function(didPot){ return "Jij " + (didPot?"pot.":"past."); },
     logPlayerDecision: function(name, didPot){ return name + " " + (didPot?"pot.":"past."); },
     logShowdown: function(text){ return "Showdown: " + text; },
@@ -782,6 +783,7 @@ var LANG = {
     logEveryoneAnte: function(ante,pot){ return "Everyone antes " + ante + " chips. The pot is now " + pot + "."; },
     logPotCarries: function(pot){ return "The pot already stands at " + pot + " chips — nobody needs to ante again this round."; },
     logAiDecision: function(name, style, didPot, pct){ return name + " (" + style + ") " + (didPot?"stays in.":"folds.") + " [estimated win chance " + pct + "%]"; },
+    logAiStyleSwitch: function(name, style){ return name + " switches tactics: now playing " + style + "."; },
     logHumanDecision: function(didPot){ return "You " + (didPot?"stay in.":"fold."); },
     logPlayerDecision: function(name, didPot){ return name + " " + (didPot?"stays in.":"folds."); },
     logShowdown: function(text){ return "Showdown: " + text; },
@@ -984,6 +986,35 @@ function startRound(){
   var n = state.players.length;
   var rotated = [];
   for(var r=0;r<n;r++){ rotated.push(state.players[(state.dealerIndex + r) % n]); }
+  // Keep each AI opponent's play style from being a fixed, learnable pattern tied to their
+  // seat — every round, each AI has a chance to switch to a different tactic at random
+  // (cautious/balanced/bluffer), logged so the switch is noticeable. aiDecide() reads
+  // p.style fresh on every turn, so reassigning it here is all that's needed for it to take
+  // effect immediately, in both solo and hotseat tables.
+  var AI_STYLE_SWITCH_CHANCE = 0.25;
+  rotated.forEach(function(p){
+    if(p.isHuman || p.sittingOut) return;
+    if(Math.random() < AI_STYLE_SWITCH_CHANCE){
+      var otherStyles = STYLES.filter(function(s){ return s.key !== p.style.key; });
+      var nextStyle = otherStyles[Math.floor(Math.random() * otherStyles.length)];
+      p.style = nextStyle;
+      log(t.logAiStyleSwitch(displayName(p), t.styleLabel[nextStyle.key]));
+    }
+  });
+  // Solo mode: AI opponents have no UI to decide whether to buy more chips, and since their
+  // chips aren't real money either, letting one go permanently bust would silently end the
+  // human's whole session the moment too few players can still afford the ante — with no
+  // notice and no choice, even while the human still has plenty to keep playing with. So,
+  // same as a real buy-chips click, just top an AI back up automatically when it's short.
+  if(!state.hotseat){
+    rotated.forEach(function(p){
+      if(!p.isHuman && !p.sittingOut && p.chips < state.ante){
+        var topUpAmt = state.ante * 50;
+        p.chips += topUpAmt;
+        log(t.logSimPurchaseNamed(displayName(p), topUpAmt));
+      }
+    });
+  }
   var active = rotated.filter(function(p){ return p.chips >= state.ante && !p.sittingOut; });
   if(active.length < 2){
     log(t.logNotEnough);
@@ -1397,7 +1428,14 @@ function showResultOverlay(result){
 function canContinueLabel(){
   var t = T();
   if(!state.hotseat){
-    return (state.players[0].chips < state.ante && realHumanCount() <= 1) ? t.seeStandingsBtn : t.nextRoundBtn;
+    // Solo mode: this button never jumps straight to the final standings by itself — even
+    // when the human can no longer afford the ante, clicking it always runs
+    // continueToNextRound() first, which offers the buy-chips-or-pass choice before anything
+    // ends. Labeling it "See final standings" at that point used to wrongly suggest the
+    // session was already over, which could make a player not bother clicking it at all —
+    // and then never see the buy-chips prompt that was one click away. So in solo mode this
+    // always reads as a plain "continue".
+    return t.nextRoundBtn;
   }
   var activeNow = state.players.filter(function(p){ return !p.sittingOut; });
   var eligible = activeNow.filter(function(p){ return p.isHuman || p.chips >= state.ante; }).length;
