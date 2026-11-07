@@ -119,6 +119,11 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 .stats-achv-item b{font-size:.88rem;}
 .stats-achv-item span{font-size:.78rem;opacity:.85;}
 .stats-empty{font-size:.85rem;opacity:.75;margin-top:4px;}
+.stats-level-box{margin-bottom:14px;padding-bottom:12px;border-bottom:1px solid rgba(255,255,255,.08);}
+.stats-level-label{font-family:"Fraunces",Georgia,serif;font-size:1.1rem;font-weight:700;margin-bottom:6px;}
+.stats-xp-bar-track{background:rgba(255,255,255,.12);border-radius:8px;height:10px;overflow:hidden;}
+.stats-xp-bar-fill{background:var(--accent);height:100%;border-radius:8px;}
+.stats-xp-label{font-size:.78rem;opacity:.8;margin-top:4px;}
 
 .result-overlay{position:absolute;inset:0;background:rgba(6,20,13,.78);display:none;align-items:center;justify-content:center;padding:16px;z-index:3;border-radius:18px;}
 .result-overlay.active{display:flex;}
@@ -467,7 +472,10 @@ var LANG = {
     statsAchvDone: "behaald",
     statsAchvLocked: "nog niet behaald",
     statsCloseBtn: "Sluiten",
+    statsLevelLabel: function(level){ return "Level " + level; },
+    statsXpProgress: function(have, need){ return have + " / " + need + " XP tot volgend level"; },
     logAchievementUnlocked: function(title){ return "Achievement ontgrendeld: " + title; },
+    logLevelUp: function(level){ return "Level omhoog! Je bent nu level " + level + "."; },
     achievements: {
       firstWin: { title: "Eerste overwinning", desc: "Win je eerste pot." },
       firstBluffWin: { title: "Meester-bluffer", desc: "Win een pot met een Superbluf." },
@@ -600,7 +608,10 @@ var LANG = {
     statsAchvDone: "unlocked",
     statsAchvLocked: "not yet unlocked",
     statsCloseBtn: "Close",
+    statsLevelLabel: function(level){ return "Level " + level; },
+    statsXpProgress: function(have, need){ return have + " / " + need + " XP to next level"; },
     logAchievementUnlocked: function(title){ return "Achievement unlocked: " + title; },
+    logLevelUp: function(level){ return "Level up! You're now level " + level + "."; },
     achievements: {
       firstWin: { title: "First win", desc: "Win your first pot." },
       firstBluffWin: { title: "Master bluffer", desc: "Win a pot with a Bluff." },
@@ -1755,7 +1766,7 @@ function defaultStats(){
   return {
     handsPlayed: 0, handsWon: 0, biggestPotWon: 0,
     winsByHandType: { pair:0, groot:0, klein:0, heer:0, superbluf:0, sum:0 },
-    achievements: []
+    achievements: [], xp: 0
   };
 }
 // Merges a Firestore stats object (possibly absent, or from before this feature existed)
@@ -1770,7 +1781,25 @@ function normalizeStats(raw){
     Object.keys(d.winsByHandType).forEach(function(k){ d.winsByHandType[k] = raw.winsByHandType[k] || 0; });
   }
   d.achievements = Array.isArray(raw.achievements) ? raw.achievements.slice() : [];
+  d.xp = raw.xp || 0;
   return d;
+}
+/* Levels/XP: earned purely for playing hands — never for how many chips you bet or buy, per
+   the design doc ("op basis van gespeelde rondes, niet uitgegeven geld"). A flat amount per
+   hand played (any outcome — same hands that count toward handsPlayed, including folds/ties),
+   plus a small bonus when you actually win it. Level is always derived from total xp rather
+   than stored separately, so the two can never drift apart. */
+var XP_PER_HAND_PLAYED = 10;
+var XP_BONUS_WIN = 5;
+function xpForLevel(level){ return 100 + (level-1)*50; } // xp needed to go from `level` to `level+1`
+function levelInfo(xp){
+  var level = 1, remaining = xp || 0, needed = xpForLevel(level);
+  while(remaining >= needed){
+    remaining -= needed;
+    level += 1;
+    needed = xpForLevel(level);
+  }
+  return { level: level, xpIntoLevel: remaining, xpToNext: needed };
 }
 var ACHIEVEMENTS = [
   { id:"firstWin", check:function(s){ return s.handsWon >= 1; } },
@@ -1790,6 +1819,9 @@ function recordAccountHandResult(won, potAmount, handKind){
   if(!account.stats) return;
   var s = account.stats;
   s.handsPlayed += 1;
+  var levelBefore = levelInfo(s.xp || 0).level;
+  s.xp = (s.xp || 0) + XP_PER_HAND_PLAYED + (won ? XP_BONUS_WIN : 0);
+  var levelAfter = levelInfo(s.xp).level;
   if(won){
     s.handsWon += 1;
     if(potAmount > s.biggestPotWon) s.biggestPotWon = potAmount;
@@ -1798,6 +1830,7 @@ function recordAccountHandResult(won, potAmount, handKind){
   var newly = ACHIEVEMENTS.filter(function(a){ return s.achievements.indexOf(a.id)===-1 && a.check(s); });
   newly.forEach(function(a){ s.achievements.push(a.id); });
   persistAccountStats();
+  if(levelAfter > levelBefore) log(T().logLevelUp(levelAfter));
   newly.forEach(function(a){ log(T().logAchievementUnlocked(achievementInfo(a.id).title)); });
 }
 function persistAccountStats(){
@@ -1810,6 +1843,25 @@ function renderStatsOverlay(){
   var s = account.stats || defaultStats();
   var body = document.getElementById("statsBody");
   body.innerHTML = "";
+  var lvl = levelInfo(s.xp || 0);
+  var levelBox = document.createElement("div");
+  levelBox.className = "stats-level-box";
+  var levelLabel = document.createElement("div");
+  levelLabel.className = "stats-level-label";
+  levelLabel.textContent = t.statsLevelLabel(lvl.level);
+  var barTrack = document.createElement("div");
+  barTrack.className = "stats-xp-bar-track";
+  var barFill = document.createElement("div");
+  barFill.className = "stats-xp-bar-fill";
+  barFill.style.width = Math.round((lvl.xpIntoLevel / lvl.xpToNext) * 100) + "%";
+  barTrack.appendChild(barFill);
+  var xpLabel = document.createElement("div");
+  xpLabel.className = "stats-xp-label";
+  xpLabel.textContent = t.statsXpProgress(lvl.xpIntoLevel, lvl.xpToNext);
+  levelBox.appendChild(levelLabel);
+  levelBox.appendChild(barTrack);
+  levelBox.appendChild(xpLabel);
+  body.appendChild(levelBox);
   if(s.handsPlayed === 0){
     var empty = document.createElement("p");
     empty.className = "stats-empty";
