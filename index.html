@@ -568,6 +568,7 @@ var LANG = {
     logPotCapped: function(cap, reserve){ return "De pot is bevroren op het maximum van " + cap + " chips voor deze inzet; " + reserve + " chips wachten in reserve totdat de pot leeg is."; },
     logPotCappedAffordability: function(cap, reserve){ return "Niemand aan tafel kan momenteel meer dan " + cap + " chips dekken, dus de pot wordt voor deze ronde verkleind naar " + cap + " chips zodat iedereen kan meedoen; " + reserve + " chips wachten in reserve totdat de pot leeg is."; },
     logReserveReleased: function(amount){ return "De pot is leeg — de " + amount + " chips in reserve vormen nu de nieuwe pot."; },
+    logReserveSplit: function(amount){ return "De sessie stopt terwijl er nog " + amount + " chips in reserve stonden (van een eerdere pot-verkleining) — deze zijn gelijk verdeeld over alle spelers aan deze tafel."; },
     authIntroText: "Log in met je Google-account om je chips-saldo te bewaren tussen sessies.",
     googleSignInBtn: "Inloggen met Google",
     firebaseLoadError: "Kon geen verbinding maken met de accountserver. Herlaad de pagina of probeer het later opnieuw.",
@@ -727,6 +728,7 @@ var LANG = {
     logPotCapped: function(cap, reserve){ return "The pot is frozen at the " + cap + "-chip maximum for this stake; " + reserve + " chips wait in reserve until the pot is empty."; },
     logPotCappedAffordability: function(cap, reserve){ return "Nobody at the table can currently cover more than " + cap + " chips, so the pot is shrunk to " + cap + " chips for this round so everyone can still play; " + reserve + " chips wait in reserve until the pot is empty."; },
     logReserveReleased: function(amount){ return "The pot is empty — the " + amount + " chips in reserve now form the new pot."; },
+    logReserveSplit: function(amount){ return "The session is ending while " + amount + " chips were still held in reserve (from an earlier pot shrink) — these have been split evenly across everyone still at this table."; },
     authIntroText: "Sign in with your Google account to keep your chip balance between sessions.",
     googleSignInBtn: "Sign in with Google",
     firebaseLoadError: "Couldn't connect to the account server. Reload the page or try again later.",
@@ -1725,6 +1727,18 @@ function endSession(){
   if(state){
     clearTimeout(state.timer); clearTimeout(state.aiTimeoutId); clearInterval(state.pauseInterval);
     state.roundActive = false; state.paused = false;
+    // Chips parked in the pot-cap reserve (see applyPotCap) are only ever released back into
+    // play once the live pot is fully paid out again — if the session ends first, they'd
+    // otherwise just vanish from the chip count entirely. Split them evenly across the table
+    // instead, so everyone's final chips always add back up to what the table started with.
+    if(state.reserve > 0){
+      var n = state.players.length;
+      var share = Math.floor(state.reserve / n);
+      var remainder = state.reserve - share * n;
+      state.players.forEach(function(p, i){ p.chips += share + (i < remainder ? 1 : 0); });
+      log(T().logReserveSplit(state.reserve));
+      state.reserve = 0;
+    }
   }
   hideActionBar();
   hideHandoffGate();
