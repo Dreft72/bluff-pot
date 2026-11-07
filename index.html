@@ -175,6 +175,7 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 .end-row.human{border-color:var(--accent);background:color-mix(in srgb, var(--accent) 14%, transparent);}
 .end-rank{font-family:"IBM Plex Mono",ui-monospace,monospace;font-weight:600;color:var(--muted);min-width:24px;}
 .end-name{font-weight:600;flex:1;}
+.end-start-note{font-size:.72rem;font-weight:400;opacity:.7;margin-top:2px;}
 .end-chips{font-family:"IBM Plex Mono",ui-monospace,monospace;font-variant-numeric:tabular-nums;font-weight:600;}
 
 .log-card{margin-top:16px;}
@@ -642,7 +643,8 @@ var LANG = {
     resultTieTitle: "Gelijkspel",
     playerName: function(i){ return "Speler " + i; },
     endHeadingWin: "Eindstand · jij wint!",
-    endHeadingRank: function(rank,total){ return "Eindstand · plek " + rank + " van " + total; }
+    endHeadingRank: function(rank,total){ return "Eindstand · plek " + rank + " van " + total; },
+    endStartChips: function(n){ return "begon met " + n + " chips"; }
   },
   en: {
     appName: "Bluff Pot",
@@ -800,7 +802,8 @@ var LANG = {
     resultTieTitle: "Tie",
     playerName: function(i){ return "Player " + i; },
     endHeadingWin: "Final standings · you win!",
-    endHeadingRank: function(rank,total){ return "Final standings · place " + rank + " of " + total; }
+    endHeadingRank: function(rank,total){ return "Final standings · place " + rank + " of " + total; },
+    endStartChips: function(n){ return "started with " + n + " chips"; }
   }
 };
 
@@ -946,19 +949,19 @@ function newGame(config){
   var players = [];
   if(config.hotseat){
     config.playerNames.forEach(function(nm, i){
-      players.push({ id:"human"+i, isHuman:true, chips:STARTING_CHIPS, sittingOut:false, customName: nm });
+      players.push({ id:"human"+i, isHuman:true, chips:STARTING_CHIPS, startChips:STARTING_CHIPS, sittingOut:false, customName: nm });
     });
     for(var i=0;i<config.aiCount;i++){
       players.push({
-        id:"ai"+i, isHuman:false, chips:STARTING_CHIPS, nameIndex:(i+1),
+        id:"ai"+i, isHuman:false, chips:STARTING_CHIPS, startChips:STARTING_CHIPS, nameIndex:(i+1),
         style: STYLES[i % STYLES.length], sittingOut:false
       });
     }
   } else {
-    players.push({ id:"human", isHuman:true, chips:STARTING_CHIPS, sittingOut:false });
+    players.push({ id:"human", isHuman:true, chips:STARTING_CHIPS, startChips:STARTING_CHIPS, sittingOut:false });
     for(var j=0;j<config.oppCount;j++){
       players.push({
-        id:"ai"+j, isHuman:false, chips:STARTING_CHIPS, nameIndex:(j+1),
+        id:"ai"+j, isHuman:false, chips:STARTING_CHIPS, startChips:STARTING_CHIPS, nameIndex:(j+1),
         style: STYLES[j % STYLES.length], sittingOut:false
       });
     }
@@ -1420,6 +1423,7 @@ function addPlayerMidSession(name){
     id: "human" + state.players.length,
     isHuman: true,
     chips: state.startingChips,
+    startChips: state.startingChips,
     sittingOut: false,
     customName: finalName
   });
@@ -1693,7 +1697,11 @@ function renderEndScreen(){
     var row = document.createElement("div");
     row.className = "end-row" + (p.isHuman ? " human" : "");
     var rank = document.createElement("div"); rank.className = "end-rank"; rank.textContent = "#" + (i+1);
-    var name = document.createElement("div"); name.className = "end-name"; name.textContent = displayName(p);
+    var name = document.createElement("div"); name.className = "end-name";
+    var nameText = document.createElement("div"); nameText.textContent = displayName(p);
+    var startNote = document.createElement("div"); startNote.className = "end-start-note";
+    startNote.textContent = t.endStartChips(p.startChips != null ? p.startChips : p.chips);
+    name.appendChild(nameText); name.appendChild(startNote);
     var chips = document.createElement("div"); chips.className = "end-chips"; chips.textContent = p.chips + t.chipsSuffix;
     row.appendChild(rank); row.appendChild(name); row.appendChild(chips);
     listEl.appendChild(row);
@@ -1830,7 +1838,7 @@ document.getElementById("startBtn").addEventListener("click", function(){
     fb.updateDoc(buyInRef, { chips: fb.increment(-buyIn) }).catch(function(){});
   }
   var accountPlayer = state.players.filter(function(p){ return p.id === accountTablePlayerId; })[0];
-  if(accountPlayer) accountPlayer.chips = buyIn;
+  if(accountPlayer){ accountPlayer.chips = buyIn; accountPlayer.startChips = buyIn; }
   render();
   startRound();
 });
