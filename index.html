@@ -1126,14 +1126,18 @@ function resolveShowdown(){
   // enough chips for the ante, are excluded before it's built — see startRound). So this is
   // "was the account player part of this round at all", independent of whether they potted or
   // folded — a round they folded still counts as a hand played for stats, same as one they
-  // potted into; see recordAccountHandResult's calls below.
+  // potted into; see recordAccountHandResult's calls below. The one exception is the
+  // "nobody pots" branch right below: that round doesn't call recordAccountHandResult at all,
+  // because nothing was actually decided — the pot just carries into a fresh deal next round.
+  // From a player's point of view that whole carry-over (zero or more "nobody pots" deals,
+  // followed by the deal that finally resolves it) is one pot, so only the resolving deal
+  // should count as a hand played — never the ones that just rolled the pot over.
   var accountInRound = state.order.some(function(p){ return p.id === accountTablePlayerId; });
 
   if(potters.length === 0){
     state.anteNextRound = true; // nobody potted: everyone antes again next round, so the pot keeps growing
     var msg0 = t.logNobodyPots(state.ante);
     log(msg0);
-    if(accountInRound) recordAccountHandResult(false, 0, null);
     showResultOverlay({ title:t.resultNobodyPotsTitle, explain: msg0, lines: [] });
     return;
   }
