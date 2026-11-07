@@ -546,6 +546,7 @@ var LANG = {
     noContestHint: "Niemand anders doet nog mee — potten heeft dan geen zin, dus je past.",
     potReserveNote: function(amount){ return "+ " + amount + " in reserve"; },
     logPotCapped: function(cap, reserve){ return "De pot is bevroren op het maximum van " + cap + " chips voor deze inzet; " + reserve + " chips wachten in reserve totdat de pot leeg is."; },
+    logPotCappedAffordability: function(cap, reserve){ return "Niemand aan tafel kan momenteel meer dan " + cap + " chips dekken, dus de pot wordt voor deze ronde verkleind naar " + cap + " chips zodat iedereen kan meedoen; " + reserve + " chips wachten in reserve totdat de pot leeg is."; },
     logReserveReleased: function(amount){ return "De pot is leeg — de " + amount + " chips in reserve vormen nu de nieuwe pot."; },
     authIntroText: "Log in met je Google-account om je chips-saldo te bewaren tussen sessies.",
     googleSignInBtn: "Inloggen met Google",
@@ -696,6 +697,7 @@ var LANG = {
     noContestHint: "Nobody else is still in — potting wouldn't pay off, so you fold.",
     potReserveNote: function(amount){ return "+ " + amount + " in reserve"; },
     logPotCapped: function(cap, reserve){ return "The pot is frozen at the " + cap + "-chip maximum for this stake; " + reserve + " chips wait in reserve until the pot is empty."; },
+    logPotCappedAffordability: function(cap, reserve){ return "Nobody at the table can currently cover more than " + cap + " chips, so the pot is shrunk to " + cap + " chips for this round so everyone can still play; " + reserve + " chips wait in reserve until the pot is empty."; },
     logReserveReleased: function(amount){ return "The pot is empty — the " + amount + " chips in reserve now form the new pot."; },
     authIntroText: "Sign in with your Google account to keep your chip balance between sessions.",
     googleSignInBtn: "Sign in with Google",
@@ -874,19 +876,33 @@ function potCapFor(ante){
   return 5000; // 100 (and any higher ante, as a sane fallback)
 }
 
-// Call right after anything that grows state.pot. If the pot now exceeds this table's
-// ceiling, the overflow is peeled off into state.reserve (never lost) and the live pot is
-// clamped to the ceiling, so this round is played for a capped amount. The reserve is only
-// ever released once the pot is fully paid out to an empty 0 (see resolveShowdown's solo-win
-// branch) — at that point it becomes the start of the next pot, and can grow (and get capped)
-// again from there.
+// Call right after anything that grows state.pot. Clamps state.pot to whichever is SMALLER:
+// this table's fixed ceiling for the chosen ante (potCapFor), or the current stack of the
+// poorest player who's still in for next round (chips >= ante). That second check matters:
+// without it, a pot that round after round nobody pots into can keep growing past what
+// anyone at the table could ever cover — at which point nobody can ever pot again, yet
+// "nobody pots" just keeps growing the pot further still, forever. Dynamically capping to
+// what the table can actually afford keeps every such pot coverable. Either way, the
+// overflow is peeled off into state.reserve (never lost) and the live pot is clamped, so
+// this round is played for a capped amount. The reserve is only ever released once the live
+// pot is fully paid out to an empty 0 (see resolveShowdown's solo-win branch) — at that point
+// it becomes the start of the next pot, re-checked against this same cap, and so on until the
+// reserve is fully drained.
 function applyPotCap(){
-  var cap = potCapFor(state.ante);
+  var fixedCap = potCapFor(state.ante);
+  var affordCap = null;
+  if(state.order && state.order.length){
+    var stillIn = state.order.filter(function(p){ return p.chips >= state.ante; });
+    if(stillIn.length) affordCap = Math.min.apply(null, stillIn.map(function(p){ return p.chips; }));
+  }
+  var cap = fixedCap;
+  var byAffordability = false;
+  if(affordCap !== null && affordCap < cap){ cap = affordCap; byAffordability = true; }
   if(state.pot > cap){
     var overflow = state.pot - cap;
     state.pot = cap;
     state.reserve = (state.reserve || 0) + overflow;
-    log(T().logPotCapped(cap, state.reserve));
+    log(byAffordability ? T().logPotCappedAffordability(cap, state.reserve) : T().logPotCapped(cap, state.reserve));
   }
 }
 
@@ -962,9 +978,9 @@ function startRound(){
     p.status = "beslissen";
     p.active = true;
   });
+  state.order = active.slice(); // set before applyPotCap() so it can see this round's affording players
   if(freshPot) applyPotCap();
   log(freshPot ? t.logEveryoneAnte(state.ante, state.pot) : t.logPotCarries(state.pot));
-  state.order = active.slice();
   state.turnIndex = 0;
   state.activeTurnConfirmed = false;
   state.roundActive = true;
@@ -1221,6 +1237,7 @@ function resolveShowdown(){
       state.pot = state.reserve;
       state.reserve = 0;
       log(T().logReserveReleased(state.pot));
+      applyPotCap(); // the released amount may itself still be too big to cover now — re-check it
     }
     showResultOverlay({
       title: t.resultWinTitle(solo.isHuman, displayName(solo), wonAmount),
