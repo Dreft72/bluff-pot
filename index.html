@@ -1213,6 +1213,12 @@ function resolveShowdown(){
       : t.legtSingle(allPotterNames, potAtStart);
     var msg3 = t.logTie(winNames, handLabel(tieHand), legtZin, state.pot);
     log(msg3);
+    // A tie doesn't pay anyone out yet (the pot carries over, bigger, into the next round),
+    // so it's never a "win" for stats — but the player did go to a showdown and see it through,
+    // so it still counts toward handsPlayed. won:false + no pot/handKind keeps handsWon,
+    // biggestPotWon and winsByHandType untouched; only the played-count moves.
+    var accountTieEval = evals.filter(function(e){ return e.p.id === accountTablePlayerId; })[0];
+    if(accountTieEval) recordAccountHandResult(false, 0, null);
     showResultOverlay({ title:t.resultTieTitle, explain: msg3, lines: lines });
   }
 }
@@ -1759,8 +1765,10 @@ var ACHIEVEMENTS = [
 function achievementInfo(id){
   return (T().achievements && T().achievements[id]) || { title:id, desc:"" };
 }
-// Called from resolveShowdown for the account-linked player's own finished hands only
-// (a tie doesn't call this — the round isn't actually over yet, it continues with a bigger pot).
+// Called from resolveShowdown for the account-linked player's own hands only (never for
+// opponents'). Covers a solo uncontested win, a showdown win or loss, and a tie — a tie never
+// pays out (the pot carries over into the next round) so it's passed won:false and no
+// pot/handKind, but it still counts as a hand played.
 function recordAccountHandResult(won, potAmount, handKind){
   if(!account.stats) return;
   var s = account.stats;
