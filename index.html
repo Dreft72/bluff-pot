@@ -857,12 +857,16 @@ function evaluateHand(c1, c2){
   var hasQK = (c1.rank==="Q" && c2.rank==="K") || (c1.rank==="K" && c2.rank==="Q");
   var hasKJ = (c1.rank==="K" && c2.rank==="J") || (c1.rank==="J" && c2.rank==="K");
 
+  // Power bands, high to low: Groot Stuk > Klein Stuk > Heerstuk > any Paar > punten-hand (sum,
+  // 3-21) > Superbluf (the worst hand, lower than even the lowest possible sum). Every "stuk"
+  // outranks every pair, however high the pair's rank — confirmed against the real game's
+  // rules after a player reported a pair of 4's/5's wrongly beating a Heerstuk/Klein Stuk.
   if(c1.rank === c2.rank){
-    return {power: 50 + rankOrder(c1.rank), kind:"pair", meta:{rank:c1.rank}};
+    return {power: 500 + rankOrder(c1.rank), kind:"pair", meta:{rank:c1.rank}};
   }
-  if(sameSuit && hasQK) return {power:100, kind:"groot", meta:{}};
-  if(sameSuit && hasJQ) return {power:40, kind:"klein", meta:{}};
-  if(sameSuit && hasKJ) return {power:39, kind:"heer", meta:{}};
+  if(sameSuit && hasQK) return {power:1000, kind:"groot", meta:{}};
+  if(sameSuit && hasJQ) return {power:900, kind:"klein", meta:{}};
+  if(sameSuit && hasKJ) return {power:800, kind:"heer", meta:{}};
   if(!sameSuit && hasJQ) return {power:0, kind:"superbluf", meta:{}};
   var sum = rankValue(c1.rank) + rankValue(c2.rank);
   return {power: sum, kind:"sum", meta:{sum:sum}};
