@@ -124,6 +124,12 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 .stats-xp-bar-track{background:rgba(255,255,255,.12);border-radius:8px;height:10px;overflow:hidden;}
 .stats-xp-bar-fill{background:var(--accent);height:100%;border-radius:8px;}
 .stats-xp-label{font-size:.78rem;opacity:.8;margin-top:4px;}
+.settings-row{margin-bottom:14px;}
+.settings-label{font-size:.9rem;margin-bottom:6px;display:block;}
+.settings-note{font-size:.8rem;opacity:.8;margin-top:6px;}
+.settings-confirm-row{display:flex;gap:8px;margin-top:10px;}
+.settings-confirm-row button{flex:1;margin-top:0;}
+.settings-error{color:var(--bad);font-size:.82rem;margin-top:6px;}
 
 .result-overlay{position:absolute;inset:0;background:rgba(6,20,13,.78);display:none;align-items:center;justify-content:center;padding:16px;z-index:3;border-radius:18px;}
 .result-overlay.active{display:flex;}
@@ -216,6 +222,7 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
     <div class="account-bar" id="accountBar" hidden>
       <span class="auth-status" id="dailyBonusNote" hidden></span>
       <button class="ghost tiny" id="statsBtn">Statistics</button>
+      <button class="ghost tiny" id="settingsBtn">Settings</button>
       <button class="ghost tiny" id="signOutBtn">Sign out</button>
     </div>
     <p class="lede" id="ledeText"></p>
@@ -384,6 +391,23 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
   </div>
 </div>
 
+<div class="pause-overlay" id="settingsOverlay" hidden role="status" aria-live="polite">
+  <div class="pause-panel stats-panel">
+    <div class="pause-title" id="settingsTitleText">Settings</div>
+    <div id="settingsBody"></div>
+    <button class="primary" id="settingsCloseBtn" style="margin-top:14px;">Close</button>
+  </div>
+</div>
+
+<div class="pause-overlay" id="spendingLimitOverlay" hidden role="status" aria-live="assertive">
+  <div class="pause-panel">
+    <div class="pause-title" id="spendingLimitTitleText">Monthly limit reached</div>
+    <div class="pause-by" id="spendingLimitExplainText" style="margin-bottom:18px;"></div>
+    <button class="primary" id="spendingLimitSettingsBtn" style="margin-bottom:10px;">Go to settings</button>
+    <button class="ghost" id="spendingLimitPassBtn" style="width:100%;margin-top:0;">I'll pass</button>
+  </div>
+</div>
+
 <!-- Firebase's "compat" build: classic (non-module) scripts, loaded from jsdelivr since the
      publish host's CDN allowlist doesn't include Firebase's own gstatic.com. Classic scripts
      with a src run synchronously, in order, as the page parses — unlike a module build, there's
@@ -476,6 +500,20 @@ var LANG = {
     statsXpProgress: function(have, need){ return have + " / " + need + " XP tot volgend level"; },
     logAchievementUnlocked: function(title){ return "Achievement ontgrendeld: " + title; },
     logLevelUp: function(level){ return "Level omhoog! Je bent nu level " + level + "."; },
+    settingsBtn: "Instellingen",
+    settingsTitleText: "Instellingen",
+    settingsCloseBtn: "Sluiten",
+    spendingLimitLabel: "Maandelijkse uitgavenlimiet (chips bijkopen)",
+    spendingLimitUsedNote: function(used, limit){ return "Deze maand al " + used + " van de " + limit + " chips bijgekocht."; },
+    spendingLimitSaveBtn: "Opslaan",
+    spendingLimitInvalid: "Vul een geldig aantal chips in (minimaal 1).",
+    spendingLimitRaiseConfirm: function(newLimit){ return "Weet je zeker dat je je limiet wilt verhogen naar " + newLimit + " chips per maand?"; },
+    spendingLimitConfirmRaiseBtn: "Ja, verhogen",
+    spendingLimitCancelBtn: "Annuleren",
+    spendingLimitSavedNote: function(newLimit){ return "Limiet aangepast naar " + newLimit + " chips per maand."; },
+    spendingLimitBlockedTitle: "Maandelijkse limiet bereikt",
+    spendingLimitBlockedExplain: "Je hebt deze maand je zelf ingestelde limiet voor het bijkopen van chips bereikt. Je kunt de limiet aanpassen bij Instellingen, of voor nu passen.",
+    goToSettingsBtn: "Naar instellingen",
     achievements: {
       firstWin: { title: "Eerste overwinning", desc: "Win je eerste pot." },
       firstBluffWin: { title: "Meester-bluffer", desc: "Win een pot met een Superbluf." },
@@ -612,6 +650,20 @@ var LANG = {
     statsXpProgress: function(have, need){ return have + " / " + need + " XP to next level"; },
     logAchievementUnlocked: function(title){ return "Achievement unlocked: " + title; },
     logLevelUp: function(level){ return "Level up! You're now level " + level + "."; },
+    settingsBtn: "Settings",
+    settingsTitleText: "Settings",
+    settingsCloseBtn: "Close",
+    spendingLimitLabel: "Monthly spending limit (buying chips)",
+    spendingLimitUsedNote: function(used, limit){ return "You've bought " + used + " of " + limit + " chips this month."; },
+    spendingLimitSaveBtn: "Save",
+    spendingLimitInvalid: "Enter a valid number of chips (at least 1).",
+    spendingLimitRaiseConfirm: function(newLimit){ return "Are you sure you want to raise your limit to " + newLimit + " chips per month?"; },
+    spendingLimitConfirmRaiseBtn: "Yes, raise it",
+    spendingLimitCancelBtn: "Cancel",
+    spendingLimitSavedNote: function(newLimit){ return "Limit updated to " + newLimit + " chips per month."; },
+    spendingLimitBlockedTitle: "Monthly limit reached",
+    spendingLimitBlockedExplain: "You've reached your own monthly limit for buying chips. You can adjust it in Settings, or pass for now.",
+    goToSettingsBtn: "Go to settings",
     achievements: {
       firstWin: { title: "First win", desc: "Win your first pot." },
       firstBluffWin: { title: "Master bluffer", desc: "Win a pot with a Bluff." },
@@ -1386,6 +1438,14 @@ function buyChipsAndContinue(){
   // flow can be tested. A real build wires this to the chip-pricing tiers and an actual
   // store purchase instead of a flat top-up.
   var amount = state.ante * 50;
+  // The monthly spending limit only ever applies to the account-linked player's own top-ups
+  // (see trySpendChips) — other local hotseat/AI players aren't tied to an account and this
+  // responsible-play control doesn't apply to them.
+  if(p.id === accountTablePlayerId && !trySpendChips(amount)){
+    hideTopUpOverlay();
+    document.getElementById("spendingLimitOverlay").hidden = false;
+    return;
+  }
   p.chips += amount;
   log(state.hotseat ? T().logSimPurchaseNamed(displayName(p), amount) : T().logSimPurchase(amount));
   hideTopUpOverlay();
@@ -1553,6 +1613,16 @@ function applyStaticText(){
   document.getElementById("birthYearInput").placeholder = t.birthYearPlaceholder;
   document.getElementById("ageCheckConfirmBtn").textContent = t.ageCheckConfirmBtn;
   document.getElementById("signOutBtn").textContent = t.signOutBtn;
+  document.getElementById("statsBtn").textContent = t.statsBtn;
+  document.getElementById("statsTitleText").textContent = t.statsTitleText;
+  document.getElementById("statsCloseBtn").textContent = t.statsCloseBtn;
+  document.getElementById("settingsBtn").textContent = t.settingsBtn;
+  document.getElementById("settingsTitleText").textContent = t.settingsTitleText;
+  document.getElementById("settingsCloseBtn").textContent = t.settingsCloseBtn;
+  document.getElementById("spendingLimitTitleText").textContent = t.spendingLimitBlockedTitle;
+  document.getElementById("spendingLimitExplainText").textContent = t.spendingLimitBlockedExplain;
+  document.getElementById("spendingLimitSettingsBtn").textContent = t.goToSettingsBtn;
+  document.getElementById("spendingLimitPassBtn").textContent = t.passForNowBtn;
   if(typeof account !== "undefined" && account.loaded) updateAccountBarText();
 }
 
@@ -1758,7 +1828,7 @@ document.getElementById("addPlayerCancelBtn").addEventListener("click", function
    which is just the chips in play at one local table/session. Nothing here touches `state`
    yet: signing in only gets you to the existing setup screen with your account balance shown;
    actually spending/crediting that balance against a table (the "buy-in" model) is a later step. */
-var account = { uid:null, chips:0, birthYear:null, loaded:false, stats:null };
+var account = { uid:null, chips:0, birthYear:null, loaded:false, stats:null, spending:null };
 var fb = null;
 
 /* ---------------- Statistics & achievements ----------------
@@ -1912,6 +1982,132 @@ function renderStatsOverlay(){
   });
   body.appendChild(list);
 }
+
+/* ---------------- Monthly spending limit ----------------
+   A visible, self-set limit on how many chips the account holder can buy per calendar
+   month (see buyChipsAndContinue) — a responsible-play control, separate from stats/XP.
+   Per the design doc: easy to lower, needs an extra confirmation step to raise. It only
+   ever applies to the account-linked player's own top-ups — other local hotseat/AI players
+   aren't tied to an account and aren't affected by this. */
+function monthStamp(){ return new Date().toISOString().slice(0,7); } // YYYY-MM, UTC calendar month
+function defaultSpending(){ return { limitPerMonth: 10000, monthStamp: monthStamp(), chipsThisMonth: 0 }; }
+// Merges a Firestore spending object (possibly absent) onto a fresh default, and rolls the
+// counter over to 0 automatically once a new calendar month has started since the last save.
+function normalizeSpending(raw){
+  var d = defaultSpending();
+  if(!raw) return d;
+  if(typeof raw.limitPerMonth === "number" && raw.limitPerMonth > 0) d.limitPerMonth = raw.limitPerMonth;
+  if(raw.monthStamp === monthStamp()) d.chipsThisMonth = raw.chipsThisMonth || 0;
+  // else: a new month has started since the last save — chipsThisMonth stays at the fresh
+  // default (0) and monthStamp is already today's, from defaultSpending() above.
+  return d;
+}
+function persistAccountSpending(){
+  if(!fb || !account.uid || !account.spending) return;
+  var ref = fb.doc(fb.db, "users", account.uid);
+  fb.updateDoc(ref, { spending: account.spending }).catch(function(){});
+}
+// Tracks a top-up of `amount` chips against the monthly allowance (always called before the
+// chips are actually credited, from buyChipsAndContinue). Returns false (and does nothing)
+// when the allowance doesn't stretch that far, so the caller can block the purchase instead.
+function trySpendChips(amount){
+  if(!account.spending) return true; // no account layer loaded (shouldn't happen mid-game) — don't block
+  if(account.spending.chipsThisMonth + amount > account.spending.limitPerMonth) return false;
+  account.spending.chipsThisMonth += amount;
+  persistAccountSpending();
+  return true;
+}
+function renderSettingsOverlay(){
+  var t = T();
+  var body = document.getElementById("settingsBody");
+  body.innerHTML = "";
+  var sp = account.spending || defaultSpending();
+  var row = document.createElement("div");
+  row.className = "settings-row";
+  var label = document.createElement("label");
+  label.className = "settings-label";
+  label.textContent = t.spendingLimitLabel;
+  var input = document.createElement("input");
+  input.className = "name-input";
+  input.type = "number"; input.inputMode = "numeric"; input.min = "1"; input.step = "1";
+  input.id = "spendingLimitInput";
+  input.value = sp.limitPerMonth;
+  var usedNote = document.createElement("div");
+  usedNote.className = "settings-note";
+  usedNote.textContent = t.spendingLimitUsedNote(sp.chipsThisMonth, sp.limitPerMonth);
+  var errEl = document.createElement("div");
+  errEl.className = "settings-error"; errEl.id = "spendingLimitErrorText"; errEl.hidden = true;
+  var saveBtn = document.createElement("button");
+  saveBtn.className = "primary"; saveBtn.id = "spendingLimitSaveBtn"; saveBtn.style.marginTop = "10px";
+  saveBtn.textContent = t.spendingLimitSaveBtn;
+  var confirmRow = document.createElement("div");
+  confirmRow.className = "settings-confirm-row"; confirmRow.id = "spendingLimitConfirmRow"; confirmRow.hidden = true;
+  var confirmText = document.createElement("div"); confirmText.id = "spendingLimitConfirmText";
+  var savedNote = document.createElement("div");
+  savedNote.className = "settings-note"; savedNote.id = "spendingLimitSavedNote"; savedNote.hidden = true;
+
+  row.appendChild(label);
+  row.appendChild(input);
+  row.appendChild(usedNote);
+  row.appendChild(errEl);
+  row.appendChild(saveBtn);
+  row.appendChild(confirmRow);
+  row.appendChild(savedNote);
+  body.appendChild(row);
+
+  function applyNewLimit(newLimit){
+    account.spending.limitPerMonth = newLimit;
+    persistAccountSpending();
+    confirmRow.hidden = true;
+    savedNote.hidden = false;
+    savedNote.textContent = t.spendingLimitSavedNote(newLimit);
+    usedNote.textContent = t.spendingLimitUsedNote(account.spending.chipsThisMonth, newLimit);
+  }
+  saveBtn.addEventListener("click", function(){
+    errEl.hidden = true;
+    savedNote.hidden = true;
+    var newLimit = parseInt(input.value, 10);
+    if(!newLimit || newLimit < 1){
+      errEl.hidden = false;
+      errEl.textContent = t.spendingLimitInvalid;
+      return;
+    }
+    if(newLimit <= account.spending.limitPerMonth){
+      applyNewLimit(newLimit); // lowering (or keeping the same): always immediate
+      return;
+    }
+    // Raising needs an extra confirmation step, per the design intent.
+    confirmRow.innerHTML = "";
+    confirmText.textContent = t.spendingLimitRaiseConfirm(newLimit);
+    var yesBtn = document.createElement("button");
+    yesBtn.className = "primary"; yesBtn.textContent = t.spendingLimitConfirmRaiseBtn;
+    yesBtn.addEventListener("click", function(){ applyNewLimit(newLimit); });
+    var noBtn = document.createElement("button");
+    noBtn.className = "ghost"; noBtn.textContent = t.spendingLimitCancelBtn;
+    noBtn.addEventListener("click", function(){ confirmRow.hidden = true; });
+    confirmRow.appendChild(confirmText);
+    confirmRow.appendChild(yesBtn);
+    confirmRow.appendChild(noBtn);
+    confirmRow.hidden = false;
+  });
+}
+document.getElementById("settingsBtn").addEventListener("click", function(){
+  renderSettingsOverlay();
+  document.getElementById("settingsOverlay").hidden = false;
+});
+document.getElementById("settingsCloseBtn").addEventListener("click", function(){
+  document.getElementById("settingsOverlay").hidden = true;
+});
+document.getElementById("spendingLimitSettingsBtn").addEventListener("click", function(){
+  document.getElementById("spendingLimitOverlay").hidden = true;
+  renderSettingsOverlay();
+  document.getElementById("settingsOverlay").hidden = false;
+});
+document.getElementById("spendingLimitPassBtn").addEventListener("click", function(){
+  document.getElementById("spendingLimitOverlay").hidden = true;
+  passAndContinue();
+});
+
 document.getElementById("statsBtn").addEventListener("click", function(){
   renderStatsOverlay();
   document.getElementById("statsOverlay").hidden = false;
@@ -2008,6 +2204,7 @@ function loadOrCreateAccount(uid){
     account.chips = data.chips || 0;
     account.birthYear = data.birthYear || null;
     account.stats = normalizeStats(data.stats);
+    account.spending = normalizeSpending(data.spending);
     maybeGrantDailyBonus(ref, data);
   }).catch(function(err){
     showAuthError(err && err.code ? err.code : String(err));
@@ -2019,12 +2216,13 @@ function createAccountDoc(uid, birthYear){
   var data = {
     chips: STARTING_ACCOUNT_CHIPS, birthYear: birthYear,
     createdAt: fb.serverTimestamp(), lastDailyBonusAt: todayStamp(),
-    stats: defaultStats()
+    stats: defaultStats(), spending: defaultSpending()
   };
   fb.setDoc(ref, data).then(function(){
     account.chips = STARTING_ACCOUNT_CHIPS;
     account.birthYear = birthYear;
     account.stats = defaultStats();
+    account.spending = defaultSpending();
     showSetupAuthenticated();
   }).catch(function(err){
     var el = document.getElementById("ageCheckErrorText");
