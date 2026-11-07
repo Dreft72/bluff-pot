@@ -108,6 +108,18 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 .pause-by{color:var(--muted);font-size:.9rem;margin-bottom:4px;}
 .pause-countdown{color:var(--muted);font-size:.85rem;margin-bottom:16px;font-variant-numeric:tabular-nums;}
 
+.stats-panel{max-width:400px;text-align:left;max-height:82vh;overflow-y:auto;}
+.stats-row{display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid rgba(255,255,255,.08);font-size:.92rem;}
+.stats-row:last-child{border-bottom:none;}
+.stats-row b{font-variant-numeric:tabular-nums;}
+.stats-achv-heading{font-family:"Fraunces",Georgia,serif;font-size:1.05rem;font-weight:700;margin:16px 0 8px;}
+.stats-achv-list{display:flex;flex-direction:column;gap:8px;}
+.stats-achv-item{display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:10px;background:rgba(255,255,255,.05);}
+.stats-achv-item.locked{opacity:.45;}
+.stats-achv-item b{font-size:.88rem;}
+.stats-achv-item span{font-size:.78rem;opacity:.85;}
+.stats-empty{font-size:.85rem;opacity:.75;margin-top:4px;}
+
 .result-overlay{position:absolute;inset:0;background:rgba(6,20,13,.78);display:none;align-items:center;justify-content:center;padding:16px;z-index:3;border-radius:18px;}
 .result-overlay.active{display:flex;}
 .result-panel{background:var(--panel);color:var(--fg);border-radius:16px;padding:18px;max-width:360px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.4);}
@@ -198,6 +210,7 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
   <section class="card setup" id="setup" style="display:none;">
     <div class="account-bar" id="accountBar" hidden>
       <span class="auth-status" id="dailyBonusNote" hidden></span>
+      <button class="ghost tiny" id="statsBtn">Statistics</button>
       <button class="ghost tiny" id="signOutBtn">Sign out</button>
     </div>
     <p class="lede" id="ledeText"></p>
@@ -358,6 +371,14 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
   </div>
 </div>
 
+<div class="pause-overlay" id="statsOverlay" hidden role="status" aria-live="polite">
+  <div class="pause-panel stats-panel">
+    <div class="pause-title" id="statsTitleText">Your statistics</div>
+    <div id="statsBody"></div>
+    <button class="primary" id="statsCloseBtn" style="margin-top:14px;">Close</button>
+  </div>
+</div>
+
 <!-- Firebase's "compat" build: classic (non-module) scripts, loaded from jsdelivr since the
      publish host's CDN allowlist doesn't include Firebase's own gstatic.com. Classic scripts
      with a src run synchronously, in order, as the page parses — unlike a module build, there's
@@ -429,6 +450,31 @@ var LANG = {
     tagline: "naar het Nederlandse kaartspel Potten en Passen",
     chips: "chips", chipsSuffix: " chips",
     tableLabel: "Tafel", accountLabel: "Account",
+    statsBtn: "Statistieken",
+    statsTitleText: "Jouw statistieken",
+    statsHandsPlayed: function(n){ return "Potten gespeeld: " + n; },
+    statsHandsWon: function(n){ return "Potten gewonnen: " + n; },
+    statsWinRate: function(pct){ return "Winratio: " + pct + "%"; },
+    statsBiggestPot: function(n){ return "Grootste gewonnen pot: " + n + " chips"; },
+    statsFavoriteHand: function(label){ return "Favoriete winnende hand: " + label; },
+    statsFavoriteHandNone: "Favoriete winnende hand: nog geen gegevens",
+    statsHandKind: function(kind){
+      var map = { pair:"Paar", groot:"Groot Stuk", klein:"Klein Stuk", heer:"Heerstuk", superbluf:"Superbluf", sum:"Hoge kaart" };
+      return map[kind] || kind;
+    },
+    statsNoHandsYet: "Je hebt nog geen pot gespeeld met je account. Speel een pot om hier je statistieken te zien.",
+    statsAchvHeading: "Achievements",
+    statsAchvDone: "behaald",
+    statsAchvLocked: "nog niet behaald",
+    statsCloseBtn: "Sluiten",
+    logAchievementUnlocked: function(title){ return "Achievement ontgrendeld: " + title; },
+    achievements: {
+      firstWin: { title: "Eerste overwinning", desc: "Win je eerste pot." },
+      firstBluffWin: { title: "Meester-bluffer", desc: "Win een pot met een Superbluf." },
+      tenWins: { title: "Tien potten gewonnen", desc: "Win in totaal 10 potten." },
+      fiftyHands: { title: "Doorzetter", desc: "Speel in totaal 50 potten mee." },
+      bigPot500: { title: "Grote pot", desc: "Win een pot van minstens 500 chips." }
+    },
     pauseBtn: "Pauze", stopBtn: "Stoppen",
     setupLede: "Speel solo tegen het systeem, of samen om één toestel heen — naar het Nederlandse kaartspel Potten en Passen. De tegenstanders rekenen hun winkans echt uit op basis van de 52 kaarten, geen willekeur.",
     modeLegend: "Spelmodus", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Om de beurt op dit toestel",
@@ -537,6 +583,31 @@ var LANG = {
     tagline: "based on the Dutch card game Potten en Passen",
     chips: "chips", chipsSuffix: " chips",
     tableLabel: "Table", accountLabel: "Account",
+    statsBtn: "Statistics",
+    statsTitleText: "Your statistics",
+    statsHandsPlayed: function(n){ return "Hands played: " + n; },
+    statsHandsWon: function(n){ return "Hands won: " + n; },
+    statsWinRate: function(pct){ return "Win rate: " + pct + "%"; },
+    statsBiggestPot: function(n){ return "Biggest pot won: " + n + " chips"; },
+    statsFavoriteHand: function(label){ return "Favorite winning hand: " + label; },
+    statsFavoriteHandNone: "Favorite winning hand: no data yet",
+    statsHandKind: function(kind){
+      var map = { pair:"Pair", groot:"Big Run", klein:"Small Run", heer:"Middle Run", superbluf:"Bluff", sum:"High card" };
+      return map[kind] || kind;
+    },
+    statsNoHandsYet: "You haven't played a hand with your account yet. Play a hand to see your statistics here.",
+    statsAchvHeading: "Achievements",
+    statsAchvDone: "unlocked",
+    statsAchvLocked: "not yet unlocked",
+    statsCloseBtn: "Close",
+    logAchievementUnlocked: function(title){ return "Achievement unlocked: " + title; },
+    achievements: {
+      firstWin: { title: "First win", desc: "Win your first pot." },
+      firstBluffWin: { title: "Master bluffer", desc: "Win a pot with a Bluff." },
+      tenWins: { title: "Ten wins", desc: "Win 10 pots in total." },
+      fiftyHands: { title: "Dedicated player", desc: "Play 50 hands in total." },
+      bigPot500: { title: "Big pot", desc: "Win a pot of at least 500 chips." }
+    },
     pauseBtn: "Pause", stopBtn: "Stop",
     setupLede: "Play solo against the system, or together around one device — based on the Dutch card game Potten en Passen. Opponents calculate their real win chance from the actual 52 cards, no randomness.",
     modeLegend: "Game mode", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Together on this device",
@@ -1055,10 +1126,17 @@ function resolveShowdown(){
     // at all, because soloPotWouldBeEmpty() disables potting for that player beforehand.
     var solo = potters[0];
     var wonAmount = state.pot;
+    // Evaluated here purely for stats bookkeeping (recordAccountHandResult below) — a solo,
+    // uncontested win is exactly the classic "successful bluff" moment when the hand actually
+    // held is a Superbluf, so it's worth attributing to a hand type even though no showdown
+    // happens and nothing about this hand is ever shown to the other players (hideCards stays
+    // true in the result overlay below, same as before).
+    var soloHand = evaluateHand(solo.cards[0], solo.cards[1]);
     solo.chips += state.pot;
     state.anteNextRound = true; // the pot is fully paid out, so next round starts fresh
     var msg1 = t.logSoloWin(displayName(solo), solo.isHuman, wonAmount);
     log(msg1);
+    if(solo.id === accountTablePlayerId) recordAccountHandResult(true, wonAmount, soloHand.kind);
     state.pot = 0;
     // The pot is now genuinely empty: release anything held in reserve from an earlier
     // pot cap, so it becomes the opening pot for the next round instead of staying parked.
@@ -1106,6 +1184,12 @@ function resolveShowdown(){
       : t.logBijleggenSingle(loserNames, potAtStart);
     var msg2 = t.logSingleWinner(displayName(w), w.isHuman, potAtStart, handLabel(winHand), bijleggenZin, state.pot);
     log(msg2);
+    // Stats only ever track the account-linked player's own finished hands (never opponents').
+    var accountEval = evals.filter(function(e){ return e.p.id === accountTablePlayerId; })[0];
+    if(accountEval){
+      var accountWon = accountEval.hand.power === maxPower;
+      recordAccountHandResult(accountWon, potAtStart, accountWon ? accountEval.hand.kind : null);
+    }
     showResultOverlay({
       title: t.resultWinTitle(w.isHuman, displayName(w), potAtStart),
       explain: msg2,
@@ -1636,8 +1720,124 @@ document.getElementById("addPlayerCancelBtn").addEventListener("click", function
    which is just the chips in play at one local table/session. Nothing here touches `state`
    yet: signing in only gets you to the existing setup screen with your account balance shown;
    actually spending/crediting that balance against a table (the "buy-in" model) is a later step. */
-var account = { uid:null, chips:0, birthYear:null, loaded:false };
+var account = { uid:null, chips:0, birthYear:null, loaded:false, stats:null };
 var fb = null;
+
+/* ---------------- Statistics & achievements ----------------
+   A second, separate slice of the account doc (users/{uid}.stats) — tracks the signed-in
+   account holder's own results across every table they've bought into, independent of the
+   current table's chips. Only ever updated for accountTablePlayerId's own hand outcomes;
+   opponents' (AI or other local hotseat players') results are never tracked here. */
+function defaultStats(){
+  return {
+    handsPlayed: 0, handsWon: 0, biggestPotWon: 0,
+    winsByHandType: { pair:0, groot:0, klein:0, heer:0, superbluf:0, sum:0 },
+    achievements: []
+  };
+}
+// Merges a Firestore stats object (possibly absent, or from before this feature existed)
+// onto a fresh defaultStats() so older/incomplete account docs never crash the stats UI.
+function normalizeStats(raw){
+  var d = defaultStats();
+  if(!raw) return d;
+  d.handsPlayed = raw.handsPlayed || 0;
+  d.handsWon = raw.handsWon || 0;
+  d.biggestPotWon = raw.biggestPotWon || 0;
+  if(raw.winsByHandType){
+    Object.keys(d.winsByHandType).forEach(function(k){ d.winsByHandType[k] = raw.winsByHandType[k] || 0; });
+  }
+  d.achievements = Array.isArray(raw.achievements) ? raw.achievements.slice() : [];
+  return d;
+}
+var ACHIEVEMENTS = [
+  { id:"firstWin", check:function(s){ return s.handsWon >= 1; } },
+  { id:"firstBluffWin", check:function(s){ return (s.winsByHandType.superbluf||0) >= 1; } },
+  { id:"tenWins", check:function(s){ return s.handsWon >= 10; } },
+  { id:"fiftyHands", check:function(s){ return s.handsPlayed >= 50; } },
+  { id:"bigPot500", check:function(s){ return s.biggestPotWon >= 500; } }
+];
+function achievementInfo(id){
+  return (T().achievements && T().achievements[id]) || { title:id, desc:"" };
+}
+// Called from resolveShowdown for the account-linked player's own finished hands only
+// (a tie doesn't call this — the round isn't actually over yet, it continues with a bigger pot).
+function recordAccountHandResult(won, potAmount, handKind){
+  if(!account.stats) return;
+  var s = account.stats;
+  s.handsPlayed += 1;
+  if(won){
+    s.handsWon += 1;
+    if(potAmount > s.biggestPotWon) s.biggestPotWon = potAmount;
+    if(handKind && s.winsByHandType.hasOwnProperty(handKind)) s.winsByHandType[handKind] += 1;
+  }
+  var newly = ACHIEVEMENTS.filter(function(a){ return s.achievements.indexOf(a.id)===-1 && a.check(s); });
+  newly.forEach(function(a){ s.achievements.push(a.id); });
+  persistAccountStats();
+  newly.forEach(function(a){ log(T().logAchievementUnlocked(achievementInfo(a.id).title)); });
+}
+function persistAccountStats(){
+  if(!fb || !account.uid || !account.stats) return;
+  var ref = fb.doc(fb.db, "users", account.uid);
+  fb.updateDoc(ref, { stats: account.stats }).catch(function(){});
+}
+function renderStatsOverlay(){
+  var t = T();
+  var s = account.stats || defaultStats();
+  var body = document.getElementById("statsBody");
+  body.innerHTML = "";
+  if(s.handsPlayed === 0){
+    var empty = document.createElement("p");
+    empty.className = "stats-empty";
+    empty.textContent = t.statsNoHandsYet;
+    body.appendChild(empty);
+  } else {
+    var winRate = Math.round((s.handsWon / s.handsPlayed) * 100);
+    var favKind = null, favCount = 0;
+    Object.keys(s.winsByHandType).forEach(function(k){
+      if(s.winsByHandType[k] > favCount){ favCount = s.winsByHandType[k]; favKind = k; }
+    });
+    var rows = [
+      t.statsHandsPlayed(s.handsPlayed),
+      t.statsHandsWon(s.handsWon),
+      t.statsWinRate(winRate),
+      t.statsBiggestPot(s.biggestPotWon),
+      favKind ? t.statsFavoriteHand(t.statsHandKind(favKind)) : t.statsFavoriteHandNone
+    ];
+    rows.forEach(function(text){
+      var row = document.createElement("div");
+      row.className = "stats-row";
+      row.textContent = text;
+      body.appendChild(row);
+    });
+  }
+  var heading = document.createElement("div");
+  heading.className = "stats-achv-heading";
+  heading.textContent = t.statsAchvHeading;
+  body.appendChild(heading);
+  var list = document.createElement("div");
+  list.className = "stats-achv-list";
+  ACHIEVEMENTS.forEach(function(a){
+    var unlocked = s.achievements.indexOf(a.id) !== -1;
+    var info = achievementInfo(a.id);
+    var item = document.createElement("div");
+    item.className = "stats-achv-item" + (unlocked ? "" : " locked");
+    var titleEl = document.createElement("b");
+    titleEl.textContent = info.title + " — " + (unlocked ? t.statsAchvDone : t.statsAchvLocked);
+    var descEl = document.createElement("span");
+    descEl.textContent = info.desc;
+    item.appendChild(titleEl);
+    item.appendChild(descEl);
+    list.appendChild(item);
+  });
+  body.appendChild(list);
+}
+document.getElementById("statsBtn").addEventListener("click", function(){
+  renderStatsOverlay();
+  document.getElementById("statsOverlay").hidden = false;
+});
+document.getElementById("statsCloseBtn").addEventListener("click", function(){
+  document.getElementById("statsOverlay").hidden = true;
+});
 
 function showAuthScreen(){
   document.getElementById("authScreen").hidden = false;
@@ -1726,6 +1926,7 @@ function loadOrCreateAccount(uid){
     var data = snap.data();
     account.chips = data.chips || 0;
     account.birthYear = data.birthYear || null;
+    account.stats = normalizeStats(data.stats);
     maybeGrantDailyBonus(ref, data);
   }).catch(function(err){
     showAuthError(err && err.code ? err.code : String(err));
@@ -1736,11 +1937,13 @@ function createAccountDoc(uid, birthYear){
   var ref = fb.doc(fb.db, "users", uid);
   var data = {
     chips: STARTING_ACCOUNT_CHIPS, birthYear: birthYear,
-    createdAt: fb.serverTimestamp(), lastDailyBonusAt: todayStamp()
+    createdAt: fb.serverTimestamp(), lastDailyBonusAt: todayStamp(),
+    stats: defaultStats()
   };
   fb.setDoc(ref, data).then(function(){
     account.chips = STARTING_ACCOUNT_CHIPS;
     account.birthYear = birthYear;
+    account.stats = defaultStats();
     showSetupAuthenticated();
   }).catch(function(err){
     var el = document.getElementById("ageCheckErrorText");
