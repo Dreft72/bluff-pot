@@ -408,6 +408,18 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
   </div>
 </div>
 
+<div class="pause-overlay" id="accountTopUpOverlay" hidden role="status" aria-live="assertive">
+  <div class="pause-panel">
+    <div class="pause-title" id="accountTopUpTitleText">Not enough balance</div>
+    <div class="pause-by" id="accountTopUpExplainText" style="margin-bottom:14px;"></div>
+    <input class="name-input" type="number" id="accountTopUpInput" min="1" step="1" inputmode="numeric">
+    <div class="settings-note" id="accountTopUpNote"></div>
+    <div class="settings-error" id="accountTopUpErrorText" hidden></div>
+    <button class="primary" id="accountTopUpConfirmBtn" style="margin-top:14px;margin-bottom:10px;">Buy chips</button>
+    <button class="ghost" id="accountTopUpCancelBtn" style="width:100%;margin-top:0;">Cancel</button>
+  </div>
+</div>
+
 <!-- Firebase's "compat" build: classic (non-module) scripts, loaded from jsdelivr since the
      publish host's CDN allowlist doesn't include Firebase's own gstatic.com. Classic scripts
      with a src run synchronously, in order, as the page parses — unlike a module build, there's
@@ -514,6 +526,13 @@ var LANG = {
     spendingLimitBlockedTitle: "Maandelijkse limiet bereikt",
     spendingLimitBlockedExplain: "Je hebt deze maand je zelf ingestelde limiet voor het bijkopen van chips bereikt. Je kunt de limiet aanpassen bij Instellingen, of voor nu passen.",
     goToSettingsBtn: "Naar instellingen",
+    accountTopUpTitleText: "Saldo onvoldoende",
+    accountTopUpExplainText: function(ante){ return "Je accountsaldo is te laag om te starten op deze inzet (minimaal " + ante + " chips nodig). Wil je chips bijkopen?"; },
+    accountTopUpNote: function(remaining){ return "Je kunt deze maand nog maximaal " + remaining + " chips bijkopen (uitgavenlimiet)."; },
+    accountTopUpConfirmBtn: "Chips bijkopen",
+    accountTopUpCancelBtn: "Annuleren",
+    accountTopUpErrorMin: function(min){ return "Vul minstens " + min + " chips in."; },
+    accountTopUpErrorLimit: "Dat past niet meer binnen je maandelijkse uitgavenlimiet. Pas de limiet aan bij Instellingen, of kies een lager bedrag.",
     achievements: {
       firstWin: { title: "Eerste overwinning", desc: "Win je eerste pot." },
       firstBluffWin: { title: "Meester-bluffer", desc: "Win een pot met een Superbluf." },
@@ -665,6 +684,13 @@ var LANG = {
     spendingLimitBlockedTitle: "Monthly limit reached",
     spendingLimitBlockedExplain: "You've reached your own monthly limit for buying chips. You can adjust it in Settings, or pass for now.",
     goToSettingsBtn: "Go to settings",
+    accountTopUpTitleText: "Not enough balance",
+    accountTopUpExplainText: function(ante){ return "Your account balance is too low to start at this stake (you need at least " + ante + " chips). Want to buy more chips?"; },
+    accountTopUpNote: function(remaining){ return "You can still buy up to " + remaining + " chips this month (spending limit)."; },
+    accountTopUpConfirmBtn: "Buy chips",
+    accountTopUpCancelBtn: "Cancel",
+    accountTopUpErrorMin: function(min){ return "Enter at least " + min + " chips."; },
+    accountTopUpErrorLimit: "That no longer fits within your monthly spending limit. Adjust the limit in Settings, or pick a smaller amount.",
     achievements: {
       firstWin: { title: "First win", desc: "Win your first pot." },
       firstBluffWin: { title: "Master bluffer", desc: "Win a pot with a Bluff." },
@@ -1651,6 +1677,9 @@ function applyStaticText(){
   document.getElementById("spendingLimitExplainText").textContent = t.spendingLimitBlockedExplain;
   document.getElementById("spendingLimitSettingsBtn").textContent = t.goToSettingsBtn;
   document.getElementById("spendingLimitPassBtn").textContent = t.passForNowBtn;
+  document.getElementById("accountTopUpTitleText").textContent = t.accountTopUpTitleText;
+  document.getElementById("accountTopUpConfirmBtn").textContent = t.accountTopUpConfirmBtn;
+  document.getElementById("accountTopUpCancelBtn").textContent = t.accountTopUpCancelBtn;
   if(typeof account !== "undefined" && account.loaded) updateAccountBarText();
 }
 
@@ -1758,6 +1787,13 @@ document.getElementById("startBtn").addEventListener("click", function(){
   // and re-enabled wherever the setup screen is shown again (showSetupAuthenticated, backToMenu,
   // the resetBtn handler).
   if(this.disabled) return;
+  if(account.chips < chosenAnte){
+    // No buy-in value could possibly satisfy the ante — the account balance itself is too low.
+    // Offer to buy more chips right here instead of just saying "pick at least X chips", which
+    // would otherwise be impossible to satisfy and leave the player stuck.
+    showAccountTopUpOverlay();
+    return;
+  }
   var buyInInput = document.getElementById("buyInInput");
   var buyIn = parseInt(buyInInput.value, 10);
   var errEl = document.getElementById("buyInErrorText");
@@ -2045,6 +2081,50 @@ function trySpendChips(amount){
   persistAccountSpending();
   return true;
 }
+/* Account-balance top-up from the setup screen — distinct from the mid-game table top-up
+   (buyChipsAndContinue): this one credits the persistent ACCOUNT balance (account.chips)
+   directly, for when the player can't even afford the buy-in to start a table at all. Still
+   counts against the same monthly spending limit (trySpendChips) as the mid-game one. */
+function showAccountTopUpOverlay(){
+  var t = T();
+  var input = document.getElementById("accountTopUpInput");
+  var errEl = document.getElementById("accountTopUpErrorText");
+  errEl.hidden = true;
+  var shortfall = Math.max(1, chosenAnte - account.chips);
+  var remaining = account.spending ? Math.max(0, account.spending.limitPerMonth - account.spending.chipsThisMonth) : shortfall;
+  var suggested = chosenAnte * 50;
+  input.min = shortfall;
+  input.max = Math.max(shortfall, remaining); // let them see what's needed even if the limit is tighter — caught on confirm
+  input.value = Math.min(Math.max(suggested, shortfall), Math.max(shortfall, remaining));
+  document.getElementById("accountTopUpExplainText").textContent = t.accountTopUpExplainText(chosenAnte);
+  document.getElementById("accountTopUpNote").textContent = t.accountTopUpNote(remaining);
+  document.getElementById("accountTopUpOverlay").hidden = false;
+}
+document.getElementById("accountTopUpConfirmBtn").addEventListener("click", function(){
+  var t = T();
+  var input = document.getElementById("accountTopUpInput");
+  var errEl = document.getElementById("accountTopUpErrorText");
+  var amount = parseInt(input.value, 10);
+  var shortfall = Math.max(1, chosenAnte - account.chips);
+  if(!amount || amount < shortfall){
+    errEl.hidden = false; errEl.textContent = t.accountTopUpErrorMin(shortfall); return;
+  }
+  if(!trySpendChips(amount)){
+    errEl.hidden = false; errEl.textContent = t.accountTopUpErrorLimit; return;
+  }
+  errEl.hidden = true;
+  account.chips += amount;
+  if(fb && account.uid){
+    var ref = fb.doc(fb.db, "users", account.uid);
+    fb.updateDoc(ref, { chips: fb.increment(amount) }).catch(function(){});
+  }
+  updateAccountBarText();
+  updateBuyInUI();
+  document.getElementById("accountTopUpOverlay").hidden = true;
+});
+document.getElementById("accountTopUpCancelBtn").addEventListener("click", function(){
+  document.getElementById("accountTopUpOverlay").hidden = true;
+});
 function renderSettingsOverlay(){
   var t = T();
   var body = document.getElementById("settingsBody");
