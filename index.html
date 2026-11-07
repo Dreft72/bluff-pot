@@ -1390,9 +1390,11 @@ function continueToNextRound(){
   if(!state.hotseat){
     var human = state.players[0];
     if(human.chips < state.ante){
-      // Solo mode: nobody else to keep playing with, so the session ends here.
-      log(T().logNotEnoughAnte);
-      endSession();
+      // Give the human the same buy-chips-or-pass choice hotseat players get (see
+      // showTopUpOverlay/buyChipsAndContinue/passAndContinue), instead of ending the
+      // session outright. No hand-off gate here — solo mode is always just the one
+      // human on their own device, so there's no privacy hand-off to wrap it in.
+      showTopUpOverlay(human);
       return;
     }
     startRound();
@@ -1458,7 +1460,16 @@ function passAndContinue(){
   log(state.hotseat ? T().logPassedNoChipsNamed(displayName(p)) : T().logPassedNoChips);
   hideTopUpOverlay();
   render();
-  if(state.hotseat){ resolveNextPoorPlayer(); } else { startRound(); }
+  if(state.hotseat){
+    resolveNextPoorPlayer();
+  } else {
+    // Solo mode: passing means there's nobody left to keep the session going (it's just
+    // the one human vs AI), so this ends it — same as the old automatic end-of-session
+    // behavior, just reached through an explicit choice now instead of skipping straight
+    // past the buy-chips option.
+    log(T().logNotEnoughAnte);
+    endSession();
+  }
 }
 
 function log(msg){
