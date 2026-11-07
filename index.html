@@ -1111,11 +1111,18 @@ function resolveShowdown(){
   var potters = state.order.filter(function(p){ return p.status==="gepot"; });
   state.roundActive = false;
   var t = T();
+  // state.order holds everyone dealt into THIS round (sitting-out players, and anyone without
+  // enough chips for the ante, are excluded before it's built — see startRound). So this is
+  // "was the account player part of this round at all", independent of whether they potted or
+  // folded — a round they folded still counts as a hand played for stats, same as one they
+  // potted into; see recordAccountHandResult's calls below.
+  var accountInRound = state.order.some(function(p){ return p.id === accountTablePlayerId; });
 
   if(potters.length === 0){
     state.anteNextRound = true; // nobody potted: everyone antes again next round, so the pot keeps growing
     var msg0 = t.logNobodyPots(state.ante);
     log(msg0);
+    if(accountInRound) recordAccountHandResult(false, 0, null);
     showResultOverlay({ title:t.resultNobodyPotsTitle, explain: msg0, lines: [] });
     return;
   }
@@ -1136,7 +1143,10 @@ function resolveShowdown(){
     state.anteNextRound = true; // the pot is fully paid out, so next round starts fresh
     var msg1 = t.logSoloWin(displayName(solo), solo.isHuman, wonAmount);
     log(msg1);
-    if(solo.id === accountTablePlayerId) recordAccountHandResult(true, wonAmount, soloHand.kind);
+    if(accountInRound){
+      if(solo.id === accountTablePlayerId) recordAccountHandResult(true, wonAmount, soloHand.kind);
+      else recordAccountHandResult(false, 0, null); // the account player folded while someone else won solo
+    }
     state.pot = 0;
     // The pot is now genuinely empty: release anything held in reserve from an earlier
     // pot cap, so it becomes the opening pot for the next round instead of staying parked.
@@ -1185,10 +1195,17 @@ function resolveShowdown(){
     var msg2 = t.logSingleWinner(displayName(w), w.isHuman, potAtStart, handLabel(winHand), bijleggenZin, state.pot);
     log(msg2);
     // Stats only ever track the account-linked player's own finished hands (never opponents').
-    var accountEval = evals.filter(function(e){ return e.p.id === accountTablePlayerId; })[0];
-    if(accountEval){
-      var accountWon = accountEval.hand.power === maxPower;
-      recordAccountHandResult(accountWon, potAtStart, accountWon ? accountEval.hand.kind : null);
+    // They may have potted into this showdown (accountEval set) or folded earlier in the round
+    // (accountEval undefined, but accountInRound still true) — either way the round is now
+    // resolved, so it counts as a hand played; it's only a win when they're the actual winner.
+    if(accountInRound){
+      var accountEval = evals.filter(function(e){ return e.p.id === accountTablePlayerId; })[0];
+      if(accountEval){
+        var accountWon = accountEval.hand.power === maxPower;
+        recordAccountHandResult(accountWon, potAtStart, accountWon ? accountEval.hand.kind : null);
+      } else {
+        recordAccountHandResult(false, 0, null);
+      }
     }
     showResultOverlay({
       title: t.resultWinTitle(w.isHuman, displayName(w), potAtStart),
@@ -1213,12 +1230,12 @@ function resolveShowdown(){
       : t.legtSingle(allPotterNames, potAtStart);
     var msg3 = t.logTie(winNames, handLabel(tieHand), legtZin, state.pot);
     log(msg3);
-    // A tie doesn't pay anyone out yet (the pot carries over, bigger, into the next round),
-    // so it's never a "win" for stats — but the player did go to a showdown and see it through,
-    // so it still counts toward handsPlayed. won:false + no pot/handKind keeps handsWon,
-    // biggestPotWon and winsByHandType untouched; only the played-count moves.
-    var accountTieEval = evals.filter(function(e){ return e.p.id === accountTablePlayerId; })[0];
-    if(accountTieEval) recordAccountHandResult(false, 0, null);
+    // A tie doesn't pay anyone out yet (the pot carries over, bigger, into the next round), so
+    // it's never a "win" for stats — but the round is resolved and the account player was part
+    // of it (whether they were one of the tied potters or had folded earlier), so it still
+    // counts toward handsPlayed. won:false + no pot/handKind keeps handsWon, biggestPotWon and
+    // winsByHandType untouched; only the played-count moves.
+    if(accountInRound) recordAccountHandResult(false, 0, null);
     showResultOverlay({ title:t.resultTieTitle, explain: msg3, lines: lines });
   }
 }
