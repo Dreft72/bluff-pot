@@ -131,6 +131,14 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 .settings-confirm-row button{flex:1;margin-top:0;}
 .settings-error{color:var(--bad);font-size:.82rem;margin-top:6px;}
 
+.lobby-code-box{text-align:center;background:rgba(255,255,255,.05);border-radius:12px;padding:16px;margin:16px 0;}
+.lobby-code-label{font-size:.82rem;opacity:.8;}
+.lobby-code-value{font-family:"Fraunces",Georgia,serif;font-size:2rem;font-weight:700;letter-spacing:.14em;color:var(--accent);margin:4px 0;}
+.lobby-players{display:flex;flex-direction:column;gap:8px;margin:14px 0;}
+.lobby-player-row{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-radius:10px;background:rgba(255,255,255,.05);font-size:.92rem;}
+.lobby-player-row .host-tag{font-size:.74rem;opacity:.75;margin-left:8px;}
+.lobby-player-row.you{border:1px solid var(--accent);}
+
 .result-overlay{position:absolute;inset:0;background:rgba(6,20,13,.78);display:none;align-items:center;justify-content:center;padding:16px;z-index:3;border-radius:18px;}
 .result-overlay.active{display:flex;}
 .result-panel{background:var(--panel);color:var(--fg);border-radius:16px;padding:18px;max-width:360px;width:100%;box-shadow:0 10px 30px rgba(0,0,0,.4);}
@@ -227,14 +235,31 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
       <button class="ghost tiny" id="signOutBtn">Sign out</button>
     </div>
     <p class="lede" id="ledeText"></p>
+    <p class="auth-status error" id="setupInfoNote" hidden></p>
 
     <fieldset>
       <legend id="modeLegend">Game mode</legend>
       <div class="choice-row" id="modeChoices" role="group" aria-label="Choose the game mode">
         <button class="choice" id="modeSoloBtn" data-mode="solo" aria-pressed="true">Solo vs AI</button>
         <button class="choice" id="modeHotseatBtn" data-mode="hotseat" aria-pressed="false">Together on this device</button>
+        <button class="choice" id="modeOnlineBtn" data-mode="online" aria-pressed="false">Play online</button>
       </div>
     </fieldset>
+
+    <div id="onlineFields" hidden>
+      <fieldset>
+        <legend id="onlineActionLegend">New table or join one?</legend>
+        <div class="choice-row" id="onlineActionChoices" role="group" aria-label="Choose new table or join">
+          <button class="choice" id="onlineCreateBtn" data-onlineaction="create" aria-pressed="true">New table</button>
+          <button class="choice" id="onlineJoinBtn" data-onlineaction="join" aria-pressed="false">Join with a code</button>
+        </div>
+      </fieldset>
+      <fieldset id="onlineJoinField" hidden>
+        <legend id="onlineJoinLegend">Table code</legend>
+        <input class="name-input" id="onlineJoinCodeInput" type="text" maxlength="6" autocapitalize="characters" autocomplete="off" placeholder="ABC123">
+        <p class="auth-status error" id="onlineJoinErrorText" hidden></p>
+      </fieldset>
+    </div>
 
     <fieldset id="soloOppField">
       <legend id="oppLegend">Number of opponents</legend>
@@ -297,6 +322,20 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
 
     <button class="primary" id="startBtn">Start game</button>
     <p class="note" id="setupNoteText"></p>
+  </section>
+
+  <section class="card setup" id="onlineLobby" hidden>
+    <p class="lede" id="lobbyLedeText"></p>
+    <div class="lobby-code-box">
+      <div class="lobby-code-label" id="lobbyCodeLabel"></div>
+      <div class="lobby-code-value" id="lobbyCodeText"></div>
+      <p class="note" id="lobbyShareNote"></p>
+    </div>
+    <div class="lobby-players" id="lobbyPlayerList"></div>
+    <p class="auth-status error" id="lobbyErrorText" hidden></p>
+    <button class="primary" id="lobbyStartBtn" hidden>Start the game</button>
+    <p class="note" id="lobbyWaitingNote" hidden></p>
+    <button class="ghost tiny" id="lobbyLeaveBtn">Leave table</button>
   </section>
 
   <section class="table-wrap" id="tableWrap">
@@ -445,15 +484,31 @@ var fbDbCompat = firebase.firestore();
 /* Thin adapter so the rest of the app (written against the modular-SDK call shape) doesn't need
    to change: same function names and arguments, implemented here on top of the compat SDK. */
 function fbDoc(db, collection, id){ return db.collection(collection).doc(id); }
+// Reach a subcollection, e.g. fbCollection(db, "tables", tableId, "players") -> tables/{tableId}/players.
+function fbCollection(db, collectionPath, docId, subCollection){
+  if(subCollection) return db.collection(collectionPath).doc(docId).collection(subCollection);
+  return db.collection(collectionPath);
+}
 function fbGetDoc(ref){
   return ref.get().then(function(snap){
     return { exists: function(){ return snap.exists; }, data: function(){ return snap.data(); } };
   });
 }
+function fbGetDocs(ref){
+  return ref.get().then(function(snap){
+    var docs = [];
+    snap.forEach(function(d){ docs.push({ id:d.id, data:function(){ return d.data(); } }); });
+    return { docs: docs, empty: snap.empty, size: snap.size };
+  });
+}
 function fbSetDoc(ref, data){ return ref.set(data); }
 function fbUpdateDoc(ref, data){ return ref.update(data); }
+function fbDeleteDoc(ref){ return ref.delete(); }
 function fbIncrement(n){ return firebase.firestore.FieldValue.increment(n); }
 function fbServerTimestamp(){ return firebase.firestore.FieldValue.serverTimestamp(); }
+// Works the same on a single doc ref or a whole collection ref (compat SDK dispatches by type).
+function fbOnSnapshot(ref, cb, errCb){ return ref.onSnapshot(cb, errCb); }
+function fbRunTransaction(db, updateFn){ return db.runTransaction(updateFn); }
 function fbOnAuthStateChanged(auth, cb){ return auth.onAuthStateChanged(cb); }
 function fbSignInWithPopup(auth, provider){ return auth.signInWithPopup(provider); }
 function fbSignInWithRedirect(auth, provider){ return auth.signInWithRedirect(provider); }
@@ -466,7 +521,9 @@ window.BluffPotFirebase = {
   GoogleAuthProvider: FbGoogleAuthProvider, signInWithPopup: fbSignInWithPopup,
   signInWithRedirect: fbSignInWithRedirect, getRedirectResult: fbGetRedirectResult,
   onAuthStateChanged: fbOnAuthStateChanged, signOut: fbSignOut,
-  doc: fbDoc, getDoc: fbGetDoc, setDoc: fbSetDoc, updateDoc: fbUpdateDoc,
+  doc: fbDoc, collection: fbCollection, getDoc: fbGetDoc, getDocs: fbGetDocs,
+  setDoc: fbSetDoc, updateDoc: fbUpdateDoc, deleteDoc: fbDeleteDoc,
+  onSnapshot: fbOnSnapshot, runTransaction: fbRunTransaction,
   increment: fbIncrement, serverTimestamp: fbServerTimestamp
 };
 window.dispatchEvent(new CustomEvent("bluffpot-firebase-ready"));
@@ -544,6 +601,25 @@ var LANG = {
     pauseBtn: "Pauze", stopBtn: "Stoppen",
     setupLede: "Speel solo tegen het systeem, of samen om één toestel heen — naar het Nederlandse kaartspel Potten en Passen. De tegenstanders rekenen hun winkans echt uit op basis van de 52 kaarten, geen willekeur.",
     modeLegend: "Spelmodus", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Om de beurt op dit toestel",
+    modeOnlineLabel: "Online spelen",
+    onlineActionLegend: "Nieuwe tafel of aansluiten?",
+    onlineCreateLabel: "Nieuwe tafel", onlineJoinLabel: "Aansluiten met code",
+    onlineJoinLegend: "Tafelcode",
+    onlineJoinErrorInvalid: "Vul een geldige tafelcode van 6 tekens in.",
+    onlineJoinErrorNotFound: "Deze tafel bestaat niet (meer).",
+    onlineJoinErrorStarted: "Dit spel is al gestart.",
+    onlineJoinErrorFull: "Deze tafel zit vol.",
+    onlineGenericError: "Er ging iets mis. Probeer het nog eens.",
+    lobbyLede: "Wacht tot iedereen is aangesloten.",
+    lobbyCodeLabel: "Tafelcode",
+    lobbyShareNote: "Deel deze code met de mensen die willen meespelen.",
+    lobbyYouTag: "(jij)", lobbyHostTag: "host",
+    lobbyStartBtn: "Start het spel",
+    lobbyWaitingNote: "Wachten tot de host het spel start…",
+    lobbyMinPlayersNote: "Wacht op minstens 2 spelers.",
+    lobbyLeaveBtn: "Tafel verlaten",
+    lobbyStartedNote: function(names){ return "Tafel gestart met: " + names + ". Het online spelverloop zelf (potten, passen, showdown) bouwen we in de volgende stap — voor nu laat dit zien dat iedereen echt met elkaar verbonden is."; },
+    lobbyTableGoneNote: "De host heeft deze tafel gesloten.",
     anteLegend: "Tafelinzet (ante)", anteGroupLabel: "Kies de ante",
     anteLow: "Laag · 10", anteMid: "Midden · 50", anteHigh: "Hoog · 100",
     oppLegend: "Aantal tegenstanders", oppGroupLabel: "Kies het aantal tegenstanders",
@@ -554,6 +630,7 @@ var LANG = {
     buyInLegend: "Jouw inzet voor deze tafel",
     buyInBalanceNote: function(balance){ return "Je saldo: " + balance + " chips. Wat je hier kiest neem je mee naar tafel; de rest blijft op je account staan."; },
     buyInErrorMin: function(ante){ return "Kies minstens " + ante + " chips (de gekozen ante)."; },
+    buyInErrorPositive: "Vul een geldig aantal chips in.",
     buyInErrorInsufficient: "Je hebt niet genoeg saldo voor dit bedrag.",
     accountCreditedNote: function(amount){ return "Je overgebleven " + amount + " chips zijn terug op je account gezet."; },
     setupNote: "Je accountsaldo blijft bewaard tussen sessies. De chips die je hierboven als inzet kiest, neem je mee naar deze tafel; wat je overhoudt gaat terug naar je saldo zodra je stopt.",
@@ -705,6 +782,25 @@ var LANG = {
     pauseBtn: "Pause", stopBtn: "Stop",
     setupLede: "Play solo against the system, or together around one device — based on the Dutch card game Potten en Passen. Opponents calculate their real win chance from the actual 52 cards, no randomness.",
     modeLegend: "Game mode", modeSoloLabel: "Solo vs AI", modeHotseatLabel: "Together on this device",
+    modeOnlineLabel: "Play online",
+    onlineActionLegend: "New table or join one?",
+    onlineCreateLabel: "New table", onlineJoinLabel: "Join with a code",
+    onlineJoinLegend: "Table code",
+    onlineJoinErrorInvalid: "Enter a valid 6-character table code.",
+    onlineJoinErrorNotFound: "That table doesn't exist (anymore).",
+    onlineJoinErrorStarted: "That game has already started.",
+    onlineJoinErrorFull: "That table is full.",
+    onlineGenericError: "Something went wrong. Please try again.",
+    lobbyLede: "Waiting for everyone to join.",
+    lobbyCodeLabel: "Table code",
+    lobbyShareNote: "Share this code with whoever wants to join.",
+    lobbyYouTag: "(you)", lobbyHostTag: "host",
+    lobbyStartBtn: "Start the game",
+    lobbyWaitingNote: "Waiting for the host to start the game…",
+    lobbyMinPlayersNote: "Waiting for at least 2 players.",
+    lobbyLeaveBtn: "Leave table",
+    lobbyStartedNote: function(names){ return "Table started with: " + names + ". The actual online gameplay (stay in, fold, showdown) is the next build step — for now this shows everyone is really connected to each other."; },
+    lobbyTableGoneNote: "The host closed this table.",
     anteLegend: "Table stake (ante)", anteGroupLabel: "Choose the ante",
     anteLow: "Low · 10", anteMid: "Medium · 50", anteHigh: "High · 100",
     oppLegend: "Number of opponents", oppGroupLabel: "Choose the number of opponents",
@@ -715,6 +811,7 @@ var LANG = {
     buyInLegend: "Your buy-in for this table",
     buyInBalanceNote: function(balance){ return "Your balance: " + balance + " chips. What you pick here comes to the table with you; the rest stays on your account."; },
     buyInErrorMin: function(ante){ return "Pick at least " + ante + " chips (the chosen ante)."; },
+    buyInErrorPositive: "Enter a valid number of chips.",
     buyInErrorInsufficient: "You don't have enough balance for that amount.",
     accountCreditedNote: function(amount){ return "Your remaining " + amount + " chips were credited back to your account."; },
     setupNote: "Your account balance is kept between sessions. The chips you pick above as your buy-in come to this table with you; whatever you have left goes back to your balance when you stop.",
@@ -1665,6 +1762,17 @@ function applyStaticText(){
   document.getElementById("modeLegend").textContent = t.modeLegend;
   document.getElementById("modeSoloBtn").textContent = t.modeSoloLabel;
   document.getElementById("modeHotseatBtn").textContent = t.modeHotseatLabel;
+  document.getElementById("modeOnlineBtn").textContent = t.modeOnlineLabel;
+  document.getElementById("onlineActionLegend").textContent = t.onlineActionLegend;
+  document.getElementById("onlineCreateBtn").textContent = t.onlineCreateLabel;
+  document.getElementById("onlineJoinBtn").textContent = t.onlineJoinLabel;
+  document.getElementById("onlineJoinLegend").textContent = t.onlineJoinLegend;
+  document.getElementById("lobbyLedeText").textContent = t.lobbyLede;
+  document.getElementById("lobbyCodeLabel").textContent = t.lobbyCodeLabel;
+  document.getElementById("lobbyShareNote").textContent = t.lobbyShareNote;
+  document.getElementById("lobbyStartBtn").textContent = t.lobbyStartBtn;
+  document.getElementById("lobbyLeaveBtn").textContent = t.lobbyLeaveBtn;
+  renderLobbyPlayers();
   document.getElementById("anteLegend").textContent = t.anteLegend;
   document.getElementById("anteChoices").setAttribute("aria-label", t.anteGroupLabel);
   document.getElementById("anteLowBtn").textContent = t.anteLow;
@@ -1682,6 +1790,7 @@ function applyStaticText(){
     if(inp) inp.placeholder = t.playerName(i);
   }
   document.getElementById("startBtn").textContent = t.startBtn;
+  updateModeFieldVisibility(); // re-applies the online-mode-specific startBtn label, if active
   document.getElementById("buyInLegend").textContent = t.buyInLegend;
   document.getElementById("setupNoteText").textContent = t.setupNote;
   if(typeof account !== "undefined" && account.loaded) updateBuyInUI();
@@ -1800,6 +1909,240 @@ function endSession(){
 
 /* ---------------- Wiring ---------------- */
 var chosenMode = "solo", chosenAnte = 10, chosenOpp = 3, chosenPlayerCount = 2, chosenHotseatAi = 0;
+var chosenOnlineAction = "create";
+
+/* ---------------- Online multiplayer: table lobby (milestone 1) ----------------
+   Firestore (already used for accounts) also carries live tables: tables/{code} holds the
+   table itself (host, ante, status, how many have joined), and tables/{code}/players/{uid}
+   holds each joined player's own row (name, chips) — one doc per player, so Firestore's
+   security rules can simply say "you may only write your own player row", without needing a
+   custom server. There is no backend process refereeing the table: whoever creates it is the
+   host, and (once real gameplay sync is built next) whichever player's turn comes last in a
+   round computes and writes the result, the same way a card table always has someone dealing.
+   This milestone only builds the part up through everyone seeing each other join in real time
+   and the host starting the game — the actual synced potten/passen/showdown play is the next
+   build step (see the design doc's "Gekozen aanpak echte multiplayer" note). */
+var onlineTableId = null, onlineIsHost = false, onlineAnte = null, onlineLobbyPlayers = [];
+var onlineUnsubPlayers = null, onlineUnsubTable = null;
+var TABLE_CODE_ALPHABET = "ABCDEFGHJKMNPQRSTUVWXYZ23456789"; // no 0/O or 1/I/L -- easy to read aloud or retype
+
+function generateTableCode(){
+  var code = "";
+  for(var i=0;i<6;i++){ code += TABLE_CODE_ALPHABET[Math.floor(Math.random()*TABLE_CODE_ALPHABET.length)]; }
+  return code;
+}
+
+function myOnlineDisplayName(){
+  return (fb && fb.auth && fb.auth.currentUser && fb.auth.currentUser.displayName) || T().you;
+}
+
+function createOnlineTable(buyIn, btnEl){
+  var errEl = document.getElementById("buyInErrorText");
+  errEl.hidden = true;
+  function attempt(attemptsLeft){
+    var code = generateTableCode();
+    var tableRef = fb.doc(fb.db, "tables", code);
+    fb.getDoc(tableRef).then(function(snap){
+      if(snap.exists()){
+        if(attemptsLeft > 0) return attempt(attemptsLeft - 1);
+        return Promise.reject(new Error("code_exhausted"));
+      }
+      return fb.setDoc(tableRef, {
+        hostUid: account.uid, ante: chosenAnte, status: "lobby", playerCount: 1, createdAt: fb.serverTimestamp()
+      }).then(function(){
+        var playerRef = fb.collection(fb.db, "tables", code, "players").doc(account.uid);
+        return fb.setDoc(playerRef, {
+          uid: account.uid, name: myOnlineDisplayName(), chips: buyIn, startChips: buyIn,
+          seatIndex: 0, isHost: true, joinedAt: Date.now()
+        });
+      }).then(function(){
+        account.chips -= buyIn;
+        updateAccountBarText();
+        var buyInRef = fb.doc(fb.db, "users", account.uid);
+        fb.updateDoc(buyInRef, { chips: fb.increment(-buyIn) }).catch(function(){});
+        enterOnlineLobby(code, true, chosenAnte);
+      });
+    }).catch(function(){
+      btnEl.disabled = false;
+      errEl.hidden = false; errEl.textContent = T().onlineGenericError;
+    });
+  }
+  attempt(5);
+}
+
+function joinOnlineTable(code, buyIn, btnEl){
+  var errEl = document.getElementById("onlineJoinErrorText");
+  errEl.hidden = true;
+  if(!code || code.length !== 6){
+    btnEl.disabled = false;
+    errEl.hidden = false; errEl.textContent = T().onlineJoinErrorInvalid;
+    return;
+  }
+  var tableRef = fb.doc(fb.db, "tables", code);
+  var playerRef = fb.collection(fb.db, "tables", code, "players").doc(account.uid);
+  var displayName = myOnlineDisplayName();
+  fb.runTransaction(fb.db, function(tx){
+    return tx.get(tableRef).then(function(snap){
+      if(!snap.exists) throw new Error("not_found");
+      var data = snap.data();
+      if(data.status !== "lobby") throw new Error("started");
+      if(buyIn < data.ante) throw new Error("buyin_too_low:" + data.ante);
+      return tx.get(playerRef).then(function(ownSnap){
+        // Re-joining a table you already sit at (e.g. after a page reload) just reconnects you
+        // to your existing row, untouched — it does NOT take a second buy-in from the account.
+        if(ownSnap.exists) return { ante: data.ante, isRejoin: true };
+        var count = data.playerCount || 0;
+        if(count >= MAX_REAL_PLAYERS) throw new Error("full");
+        tx.update(tableRef, { playerCount: count + 1 });
+        tx.set(playerRef, {
+          uid: account.uid, name: displayName, chips: buyIn, startChips: buyIn,
+          seatIndex: count, isHost: false, joinedAt: Date.now()
+        });
+        return { ante: data.ante, isRejoin: false };
+      });
+    });
+  }).then(function(result){
+    if(!result.isRejoin){
+      account.chips -= buyIn;
+      updateAccountBarText();
+      var buyInRef = fb.doc(fb.db, "users", account.uid);
+      fb.updateDoc(buyInRef, { chips: fb.increment(-buyIn) }).catch(function(){});
+    }
+    enterOnlineLobby(code, false, result.ante);
+  }).catch(function(err){
+    btnEl.disabled = false;
+    errEl.hidden = false;
+    var msg = (err && err.message) || "";
+    if(msg === "not_found") errEl.textContent = T().onlineJoinErrorNotFound;
+    else if(msg === "started") errEl.textContent = T().onlineJoinErrorStarted;
+    else if(msg === "full") errEl.textContent = T().onlineJoinErrorFull;
+    else if(msg.indexOf("buyin_too_low") === 0) errEl.textContent = T().buyInErrorMin(Number(msg.split(":")[1]));
+    else errEl.textContent = T().onlineGenericError;
+  });
+}
+
+function enterOnlineLobby(code, isHost, ante){
+  onlineTableId = code; onlineIsHost = isHost; onlineAnte = ante; onlineLobbyPlayers = [];
+  document.getElementById("setup").style.display = "none";
+  document.getElementById("onlineLobby").hidden = false;
+  document.getElementById("lobbyCodeText").textContent = code;
+  document.getElementById("lobbyErrorText").hidden = true;
+
+  var playersRef = fb.collection(fb.db, "tables", code, "players");
+  if(onlineUnsubPlayers) onlineUnsubPlayers();
+  onlineUnsubPlayers = fb.onSnapshot(playersRef, function(snap){
+    var list = [];
+    snap.forEach(function(d){ list.push(d.data()); });
+    list.sort(function(a,b){ return (a.seatIndex||0) - (b.seatIndex||0); });
+    onlineLobbyPlayers = list;
+    renderLobbyPlayers();
+  });
+
+  var tableRef = fb.doc(fb.db, "tables", code);
+  if(onlineUnsubTable) onlineUnsubTable();
+  onlineUnsubTable = fb.onSnapshot(tableRef, function(snap){
+    if(!snap.exists){
+      // The host closed or cancelled this table — nothing left to wait for.
+      if(!onlineIsHost) leaveOnlineLobby(true);
+      return;
+    }
+    if(snap.data().status === "playing") showOnlineGameStartedPlaceholder();
+  });
+
+  renderLobbyPlayers();
+}
+
+function renderLobbyPlayers(){
+  var el = document.getElementById("lobbyPlayerList");
+  if(!el || !onlineTableId) return;
+  var t = T();
+  el.innerHTML = "";
+  onlineLobbyPlayers.forEach(function(p){
+    var row = document.createElement("div");
+    row.className = "lobby-player-row" + (p.uid === account.uid ? " you" : "");
+    var nameSpan = document.createElement("span");
+    nameSpan.textContent = p.name + (p.uid === account.uid ? " " + t.lobbyYouTag : "");
+    row.appendChild(nameSpan);
+    if(p.isHost){
+      var hostTag = document.createElement("span");
+      hostTag.className = "host-tag";
+      hostTag.textContent = t.lobbyHostTag;
+      row.appendChild(hostTag);
+    }
+    el.appendChild(row);
+  });
+  var count = onlineLobbyPlayers.length;
+  var startBtn = document.getElementById("lobbyStartBtn");
+  var waitNote = document.getElementById("lobbyWaitingNote");
+  if(onlineIsHost){
+    startBtn.hidden = count < 2;
+    waitNote.hidden = count >= 2;
+    if(count < 2) waitNote.textContent = t.lobbyMinPlayersNote;
+  } else {
+    startBtn.hidden = true;
+    waitNote.hidden = false;
+    waitNote.textContent = t.lobbyWaitingNote;
+  }
+}
+
+function showOnlineGameStartedPlaceholder(){
+  if(document.getElementById("onlineLobby").hidden) return; // already moved on
+  var names = onlineLobbyPlayers.map(function(p){ return p.name; }).join(", ");
+  document.getElementById("lobbyStartBtn").hidden = true;
+  var waitNote = document.getElementById("lobbyWaitingNote");
+  waitNote.hidden = false;
+  waitNote.textContent = T().lobbyStartedNote(names);
+}
+
+function leaveOnlineLobby(tableWasClosed){
+  if(onlineUnsubPlayers){ onlineUnsubPlayers(); onlineUnsubPlayers = null; }
+  if(onlineUnsubTable){ onlineUnsubTable(); onlineUnsubTable = null; }
+  var code = onlineTableId, wasHost = onlineIsHost;
+  var myEntry = onlineLobbyPlayers.filter(function(p){ return p.uid === account.uid; })[0];
+  if(myEntry && myEntry.chips){
+    // Nobody actually played yet (still in the lobby), so the whole buy-in goes straight back.
+    account.chips += myEntry.chips;
+    updateAccountBarText();
+    if(fb && account.uid){
+      var ref = fb.doc(fb.db, "users", account.uid);
+      fb.updateDoc(ref, { chips: fb.increment(myEntry.chips) }).catch(function(){});
+    }
+  }
+  onlineTableId = null; onlineIsHost = false; onlineAnte = null; onlineLobbyPlayers = [];
+  document.getElementById("onlineLobby").hidden = true;
+  document.getElementById("setup").style.display = "";
+  document.getElementById("startBtn").disabled = false;
+  var infoNote = document.getElementById("setupInfoNote");
+  if(tableWasClosed){
+    infoNote.hidden = false;
+    infoNote.textContent = T().lobbyTableGoneNote;
+  } else {
+    infoNote.hidden = true;
+  }
+  if(code && !tableWasClosed && fb && account.uid){
+    var playerRef = fb.collection(fb.db, "tables", code, "players").doc(account.uid);
+    fb.deleteDoc(playerRef).catch(function(){});
+    var tableRef = fb.doc(fb.db, "tables", code);
+    if(wasHost){
+      fb.deleteDoc(tableRef).catch(function(){}); // host leaving ends the table for everyone
+    } else {
+      fb.updateDoc(tableRef, { playerCount: fb.increment(-1) }).catch(function(){});
+    }
+  }
+}
+
+function updateModeFieldVisibility(){
+  document.getElementById("soloOppField").hidden = (chosenMode !== "solo");
+  document.getElementById("hotseatFields").hidden = (chosenMode !== "hotseat");
+  document.getElementById("onlineFields").hidden = (chosenMode !== "online");
+  document.getElementById("onlineJoinField").hidden = !(chosenMode === "online" && chosenOnlineAction === "join");
+  // Joining an existing table inherits its ante; only the host (creating) picks one.
+  var isJoin = (chosenMode === "online" && chosenOnlineAction === "join");
+  document.getElementById("anteChoices").closest("fieldset").hidden = isJoin;
+  document.getElementById("startBtn").textContent = (chosenMode === "online")
+    ? (chosenOnlineAction === "join" ? T().onlineJoinLabel : T().onlineCreateLabel)
+    : T().startBtn;
+}
 
 document.getElementById("langBtn").addEventListener("click", function(){
   currentLang = currentLang === "nl" ? "en" : "nl";
@@ -1816,8 +2159,30 @@ document.getElementById("modeChoices").addEventListener("click", function(e){
   this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
   btn.setAttribute("aria-pressed","true");
   chosenMode = btn.dataset.mode;
-  document.getElementById("soloOppField").hidden = (chosenMode === "hotseat");
-  document.getElementById("hotseatFields").hidden = (chosenMode !== "hotseat");
+  updateModeFieldVisibility();
+});
+document.getElementById("onlineActionChoices").addEventListener("click", function(e){
+  var btn = e.target.closest(".choice"); if(!btn) return;
+  this.querySelectorAll(".choice").forEach(function(b){ b.setAttribute("aria-pressed","false"); });
+  btn.setAttribute("aria-pressed","true");
+  chosenOnlineAction = btn.dataset.onlineaction;
+  updateModeFieldVisibility();
+});
+document.getElementById("onlineJoinCodeInput").addEventListener("input", function(){
+  this.value = this.value.toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,6);
+});
+document.getElementById("lobbyStartBtn").addEventListener("click", function(){
+  if(!onlineTableId || !onlineIsHost || this.disabled) return;
+  this.disabled = true;
+  var tableRef = fb.doc(fb.db, "tables", onlineTableId);
+  fb.updateDoc(tableRef, { status: "playing" }).catch(function(){
+    document.getElementById("lobbyStartBtn").disabled = false;
+    var errEl = document.getElementById("lobbyErrorText");
+    errEl.hidden = false; errEl.textContent = T().onlineGenericError;
+  });
+});
+document.getElementById("lobbyLeaveBtn").addEventListener("click", function(){
+  leaveOnlineLobby(false);
 });
 document.getElementById("anteChoices").addEventListener("click", function(e){
   var btn = e.target.closest(".choice"); if(!btn) return;
@@ -1851,10 +2216,12 @@ document.getElementById("startBtn").addEventListener("click", function(){
   // and re-enabled wherever the setup screen is shown again (showSetupAuthenticated, backToMenu,
   // the resetBtn handler).
   if(this.disabled) return;
-  if(account.chips < chosenAnte){
+  var isOnlineJoin = (chosenMode === "online" && chosenOnlineAction === "join");
+  if(!isOnlineJoin && account.chips < chosenAnte){
     // No buy-in value could possibly satisfy the ante — the account balance itself is too low.
     // Offer to buy more chips right here instead of just saying "pick at least X chips", which
-    // would otherwise be impossible to satisfy and leave the player stuck.
+    // would otherwise be impossible to satisfy and leave the player stuck. Skipped for joining an
+    // online table: we don't know that table's real ante yet, so this is re-checked once we do.
     showAccountTopUpOverlay();
     return;
   }
@@ -1862,11 +2229,22 @@ document.getElementById("startBtn").addEventListener("click", function(){
   var buyIn = parseInt(buyInInput.value, 10);
   var errEl = document.getElementById("buyInErrorText");
   errEl.hidden = true;
-  if(!buyIn || buyIn < chosenAnte){
-    errEl.hidden = false; errEl.textContent = T().buyInErrorMin(chosenAnte); return;
+  if(!buyIn || (!isOnlineJoin && buyIn < chosenAnte)){
+    errEl.hidden = false;
+    errEl.textContent = isOnlineJoin ? T().buyInErrorPositive : T().buyInErrorMin(chosenAnte);
+    return;
   }
   if(buyIn > account.chips){
     errEl.hidden = false; errEl.textContent = T().buyInErrorInsufficient; return;
+  }
+  if(chosenMode === "online"){
+    this.disabled = true;
+    if(chosenOnlineAction === "join"){
+      joinOnlineTable(document.getElementById("onlineJoinCodeInput").value.trim(), buyIn, this);
+    } else {
+      createOnlineTable(buyIn, this);
+    }
+    return;
   }
   this.disabled = true;
   document.getElementById("setup").style.display = "none";
