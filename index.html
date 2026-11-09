@@ -402,6 +402,14 @@ legend{font-weight:600;margin-bottom:8px;font-size:.95rem;}
   <div class="pause-panel">
     <div class="pause-title" id="topUpTitleText">Not enough chips</div>
     <div class="pause-by" id="topUpExplain" style="margin-bottom:18px;"></div>
+    <!-- Shown first for the signed-in account holder, while their account balance still has
+         chips on it: move more over from there before any simulated "buy" is ever offered. -->
+    <div id="topUpTransferFields" hidden>
+      <input class="name-input" type="number" id="topUpTransferInput" min="1" step="1" inputmode="numeric">
+      <div class="settings-note" id="topUpTransferNote"></div>
+      <div class="settings-error" id="topUpTransferErrorText" hidden></div>
+      <button class="primary" id="topUpTransferBtn" style="margin-top:14px;margin-bottom:10px;">Transfer from account</button>
+    </div>
     <button class="primary" id="buyChipsBtn" style="margin-bottom:10px;">Buy chips</button>
     <button class="ghost" id="passForNowBtn" style="width:100%;margin-top:0;">I'll pass</button>
   </div>
@@ -664,8 +672,13 @@ var LANG = {
     topUpExplainNamed: function(name){ return name + ", er zijn niet genoeg chips meer voor de inzet van de volgende ronde. Chips bijkopen om mee te blijven spelen, of passen totdat er weer genoeg zijn."; },
     buyChipsBtn: "Chips bijkopen",
     passForNowBtn: "Ik pas",
+    topUpTransferNote: function(balance){ return "Je accountsaldo: " + balance + " chips."; },
+    topUpTransferBtn: "Overzetten naar tafel",
+    topUpTransferErrorMin: function(min){ return "Zet minstens " + min + " chips over."; },
     logSimPurchase: function(amount){ return "Chips bijgekocht (gesimuleerd in dit prototype): +" + amount + " chips."; },
     logSimPurchaseNamed: function(name,amount){ return name + " koopt chips bij (gesimuleerd in dit prototype): +" + amount + " chips."; },
+    logAccountTransfer: function(amount){ return "Chips overgezet van accountsaldo naar tafel: +" + amount + " chips."; },
+    logAccountTransferNamed: function(name,amount){ return name + " zet chips over van het accountsaldo naar de tafel: +" + amount + " chips."; },
     logPassedNoChips: "Jij hebt aangegeven te passen omdat je niet genoeg chips meer hebt. Je doet niet mee totdat je weer genoeg chips hebt.",
     logPassedNoChipsNamed: function(name){ return name + " past omdat er niet genoeg chips meer zijn. Geen deelname totdat er weer genoeg chips zijn."; },
     statusTurn: "aan zet", statusPot: "gepot", statusPass: "gepast", statusSitOut: "zit uit", statusWait: "wacht",
@@ -845,8 +858,13 @@ var LANG = {
     topUpExplainNamed: function(name){ return name + ", there aren't enough chips left for the next round's stake. Buy more chips to keep playing, or sit out until there are enough again."; },
     buyChipsBtn: "Buy chips",
     passForNowBtn: "I'll pass",
+    topUpTransferNote: function(balance){ return "Your account balance: " + balance + " chips."; },
+    topUpTransferBtn: "Transfer to table",
+    topUpTransferErrorMin: function(min){ return "Transfer at least " + min + " chips."; },
     logSimPurchase: function(amount){ return "Chips purchased (simulated in this prototype): +" + amount + " chips."; },
     logSimPurchaseNamed: function(name,amount){ return name + " buys more chips (simulated in this prototype): +" + amount + " chips."; },
+    logAccountTransfer: function(amount){ return "Chips moved from account balance to the table: +" + amount + " chips."; },
+    logAccountTransferNamed: function(name,amount){ return name + " moves chips from their account balance to the table: +" + amount + " chips."; },
     logPassedNoChips: "You've chosen to pass because you don't have enough chips left. You won't take part until you have enough again.",
     logPassedNoChipsNamed: function(name){ return name + " passes — not enough chips left. No play until there are enough again."; },
     statusTurn: "deciding", statusPot: "in", statusPass: "folded", statusSitOut: "sitting out", statusWait: "waiting",
@@ -1612,15 +1630,64 @@ function resolveNextPoorPlayer(){
   showHandoffGate(p, function(){ showTopUpOverlay(p); });
 }
 
+// Only the signed-in account holder has a persistent account balance to draw on at all (see
+// newGame/the buy-in flow) — other local hotseat players and AI never do, so for them this is
+// always false and they go straight to the simulated buy-chips offer, same as before.
+function canTopUpFromAccount(forPlayer){
+  return forPlayer.id === accountTablePlayerId && account.chips > 0;
+}
 function showTopUpOverlay(forPlayer){
   state.topUpTarget = forPlayer;
+  var t = T();
   document.getElementById("topUpExplain").textContent = state.hotseat
-    ? T().topUpExplainNamed(displayName(forPlayer))
-    : T().topUpExplain;
+    ? t.topUpExplainNamed(displayName(forPlayer))
+    : t.topUpExplain;
+  // Pull from the account balance already sitting there first; the simulated "buy more chips"
+  // offer only ever shows once that balance itself is down to 0 (see canTopUpFromAccount).
+  var canTransfer = canTopUpFromAccount(forPlayer);
+  document.getElementById("topUpTransferFields").hidden = !canTransfer;
+  document.getElementById("buyChipsBtn").hidden = canTransfer;
+  if(canTransfer){
+    var needed = Math.max(1, state.ante - forPlayer.chips);
+    var required = Math.min(needed, account.chips);
+    var input = document.getElementById("topUpTransferInput");
+    input.min = required; input.max = account.chips;
+    input.value = Math.min(account.chips, Math.max(required, state.ante * 50));
+    document.getElementById("topUpTransferNote").textContent = t.topUpTransferNote(account.chips);
+    document.getElementById("topUpTransferErrorText").hidden = true;
+  }
   document.getElementById("topUpOverlay").hidden = false;
 }
 function hideTopUpOverlay(){
   document.getElementById("topUpOverlay").hidden = true;
+}
+function transferFromAccount(){
+  var p = state.topUpTarget || state.players[0];
+  var errEl = document.getElementById("topUpTransferErrorText");
+  errEl.hidden = true;
+  var amount = parseInt(document.getElementById("topUpTransferInput").value, 10);
+  var needed = Math.max(1, state.ante - p.chips);
+  var required = Math.min(needed, account.chips);
+  if(!amount || amount < required){
+    errEl.hidden = false; errEl.textContent = T().topUpTransferErrorMin(required); return;
+  }
+  if(amount > account.chips){
+    errEl.hidden = false; errEl.textContent = T().buyInErrorInsufficient; return;
+  }
+  // A straight transfer between a player's own account balance and their own table stack —
+  // not a purchase, so it never touches the monthly spending limit (trySpendChips) and never
+  // creates new chips, unlike the simulated buy-chips flow below.
+  account.chips -= amount;
+  p.chips += amount;
+  updateAccountBarText();
+  if(fb && account.uid){
+    var ref = fb.doc(fb.db, "users", account.uid);
+    fb.updateDoc(ref, { chips: fb.increment(-amount) }).catch(function(){});
+  }
+  log(state.hotseat ? T().logAccountTransferNamed(displayName(p), amount) : T().logAccountTransfer(amount));
+  hideTopUpOverlay();
+  render();
+  if(state.hotseat){ resolveNextPoorPlayer(); } else { startRound(); }
 }
 function buyChipsAndContinue(){
   var p = state.topUpTarget || state.players[0];
@@ -1811,6 +1878,7 @@ function applyStaticText(){
   document.getElementById("topUpTitleText").textContent = t.topUpTitle;
   document.getElementById("topUpExplain").textContent = t.topUpExplain;
   document.getElementById("buyChipsBtn").textContent = t.buyChipsBtn;
+  document.getElementById("topUpTransferBtn").textContent = t.topUpTransferBtn;
   document.getElementById("passForNowBtn").textContent = t.passForNowBtn;
   document.getElementById("handoffConfirmBtn").textContent = t.handoffBtn;
   document.getElementById("addPlayerBtn").textContent = t.addPlayerBtn;
@@ -2305,6 +2373,7 @@ document.getElementById("pauseBtn").addEventListener("click", function(){
 });
 document.getElementById("resumeBtn").addEventListener("click", resumeGame);
 document.getElementById("sitOutBtn").addEventListener("click", toggleSitOut);
+document.getElementById("topUpTransferBtn").addEventListener("click", transferFromAccount);
 document.getElementById("buyChipsBtn").addEventListener("click", buyChipsAndContinue);
 document.getElementById("passForNowBtn").addEventListener("click", passAndContinue);
 document.getElementById("handoffConfirmBtn").addEventListener("click", function(){
@@ -2647,8 +2716,20 @@ document.getElementById("settingsBtn").addEventListener("click", function(){
 });
 document.getElementById("settingsCloseBtn").addEventListener("click", function(){
   document.getElementById("settingsOverlay").hidden = true;
+  // If settings were opened from the mid-game "monthly limit reached" prompt (below), closing
+  // settings should return the player to the buy-chips prompt instead of dumping them back into
+  // a stuck game — whether or not they actually raised the limit, since "I'll pass" is still a
+  // valid way out from there.
+  if(settingsOpenedFromTopUpLimit){
+    settingsOpenedFromTopUpLimit = false;
+    if(state && state.topUpTarget){
+      showTopUpOverlay(state.topUpTarget);
+    }
+  }
 });
+var settingsOpenedFromTopUpLimit = false;
 document.getElementById("spendingLimitSettingsBtn").addEventListener("click", function(){
+  settingsOpenedFromTopUpLimit = true;
   document.getElementById("spendingLimitOverlay").hidden = true;
   renderSettingsOverlay();
   document.getElementById("settingsOverlay").hidden = false;
