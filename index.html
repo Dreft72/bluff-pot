@@ -718,6 +718,7 @@ var LANG = {
     logShowdown: function(text){ return "Showdown: " + text; },
     logNobodyPots: function(ante){ return "Iedereen past. De pot blijft staan, en iedereen zet komende ronde opnieuw " + ante + " chips bij."; },
     logSoloWin: function(name,isHuman,amount){ return (isHuman?"Jij":name) + " was de enige die potte en wint de pot van " + amount + " chips zonder showdown."; },
+    logSuperblufBonus: function(name,isHuman,potAmount,payerNames,totalBonus){ var winnerWord = isHuman ? "jou" : name; return "SUPERBLUF! Niemand durfde te potten tegen de bluf, dus betaalt elke speler die paste (" + payerNames + ") " + potAmount + " chips extra aan " + winnerWord + " — samen " + totalBonus + " chips bovenop de pot."; },
     logSingleWinner: function(wName,isHumanW,pot,handLbl,loserText,carryPot){ return (isHumanW?"Jij wint":wName+" wint") + " de pot van " + pot + " chips met " + handLbl + ". " + loserText + " De pot begint daardoor al op " + carryPot + " chips."; },
     logBijleggenMulti: function(names,amount){ return names + " leggen elk " + amount + " chips bij voor de volgende ronde."; },
     logBijleggenSingle: function(names,amount){ return names + " legt " + amount + " chips bij voor de volgende ronde."; },
@@ -732,6 +733,7 @@ var LANG = {
     logNotEnoughAnte: "Je hebt niet genoeg chips meer voor de ante. Start een nieuwe sessie om verder te spelen.",
     resultNobodyPotsTitle: "Niemand pot",
     resultWinTitle: function(isHumanW,name,amount){ return (isHumanW?"Jij wint":name+" wint") + " · " + amount + " chips"; },
+    resultSuperblufTitle: function(isHumanW,name,totalAmount){ return (isHumanW?"Jij wint":name+" wint") + " · SUPERBLUF! · " + totalAmount + " chips"; },
     resultTieTitle: "Gelijkspel",
     playerName: function(i){ return "Speler " + i; },
     endHeadingWin: "Eindstand · jij wint!",
@@ -904,6 +906,7 @@ var LANG = {
     logShowdown: function(text){ return "Showdown: " + text; },
     logNobodyPots: function(ante){ return "Everyone folds. The pot stays as is, and everyone antes " + ante + " chips again next round."; },
     logSoloWin: function(name,isHuman,amount){ return (isHuman?"You":name) + " were the only one to stay in and win the pot of " + amount + " chips without a showdown."; },
+    logSuperblufBonus: function(name,isHuman,potAmount,payerNames,totalBonus){ var winnerWord = isHuman ? "you" : name; return "SUPERBLUF! Nobody dared to stay in against the bluff, so every player who folded (" + payerNames + ") also pays " + potAmount + " chips extra to " + winnerWord + " — " + totalBonus + " chips extra on top of the pot."; },
     logSingleWinner: function(wName,isHumanW,pot,handLbl,loserText,carryPot){ return (isHumanW?"You win":wName+" wins") + " the pot of " + pot + " chips with " + handLbl + ". " + loserText + " That already starts the pot at " + carryPot + " chips."; },
     logBijleggenMulti: function(names,amount){ return names + " each add " + amount + " chips for the next round."; },
     logBijleggenSingle: function(names,amount){ return names + " adds " + amount + " chips for the next round."; },
@@ -918,6 +921,7 @@ var LANG = {
     logNotEnoughAnte: "You don't have enough chips left for the ante. Start a new session to keep playing.",
     resultNobodyPotsTitle: "Nobody stays in",
     resultWinTitle: function(isHumanW,name,amount){ return (isHumanW?"You win":name+" wins") + " · " + amount + " chips"; },
+    resultSuperblufTitle: function(isHumanW,name,totalAmount){ return (isHumanW?"You win":name+" wins") + " · SUPERBLUF! · " + totalAmount + " chips"; },
     resultTieTitle: "Tie",
     playerName: function(i){ return "Player " + i; },
     endHeadingWin: "Final standings · you win!",
@@ -1400,15 +1404,42 @@ function resolveShowdown(){
     // Evaluated here purely for stats bookkeeping (recordAccountHandResult below) — a solo,
     // uncontested win is exactly the classic "successful bluff" moment when the hand actually
     // held is a Superbluf, so it's worth attributing to a hand type even though no showdown
-    // happens and nothing about this hand is ever shown to the other players (hideCards stays
-    // true in the result overlay below, same as before).
+    // happens. Normally nothing about this hand is shown to the other players (hideCards stays
+    // true below) — the one exception is a Superbluf itself: per the traditional house rule,
+    // winning uncontested while holding the worst possible hand is worth revealing, and every
+    // player who folded instead of calling the bluff pays the winner the pot amount again,
+    // straight from their own stack (see the superbluf bonus block below).
     var soloHand = evaluateHand(solo.cards[0], solo.cards[1]);
     solo.chips += state.pot;
     state.anteNextRound = true; // the pot is fully paid out, so next round starts fresh
     var msg1 = t.logSoloWin(displayName(solo), solo.isHuman, wonAmount);
     log(msg1);
+
+    var isSuperbluf = soloHand.kind === "superbluf";
+    var totalBonus = 0;
+    var folderPayments = [];
+    var msgBluf = null;
+    if(isSuperbluf){
+      var folders = state.order.filter(function(p){ return p.status === "gepast"; });
+      folders.forEach(function(p){
+        // Clamped to what they actually have: unlike a potted stake, folding never required
+        // having the pot amount in reserve, so this side-payment must never push them negative.
+        var paid = Math.min(p.chips, wonAmount);
+        if(paid <= 0) return;
+        p.chips -= paid;
+        solo.chips += paid;
+        totalBonus += paid;
+        folderPayments.push({ p: p, paid: paid });
+      });
+      if(folderPayments.length > 0){
+        var payerNames = listNames(folderPayments.map(function(fp){ return fp.p; }));
+        msgBluf = t.logSuperblufBonus(displayName(solo), solo.isHuman, wonAmount, payerNames, totalBonus);
+        log(msgBluf);
+      }
+    }
+
     if(accountInRound){
-      if(solo.id === accountTablePlayerId) recordAccountHandResult(true, wonAmount, soloHand.kind);
+      if(solo.id === accountTablePlayerId) recordAccountHandResult(true, wonAmount + totalBonus, soloHand.kind);
       else recordAccountHandResult(false, 0, null); // the account player folded while someone else won solo
     }
     state.pot = 0;
@@ -1420,10 +1451,22 @@ function resolveShowdown(){
       log(T().logReserveReleased(state.pot));
       applyPotCap(); // the released amount may itself still be too big to cover now — re-check it
     }
+    var resultLines = [{
+      player: solo,
+      label: isSuperbluf ? handLabel(soloHand) : t.cardsNotShown,
+      isWinner: true,
+      hideCards: !isSuperbluf,
+      delta: wonAmount + totalBonus
+    }];
+    folderPayments.forEach(function(fp){
+      resultLines.push({ player: fp.p, label: t.statusPass, isWinner: false, hideCards: true, delta: -fp.paid });
+    });
     showResultOverlay({
-      title: t.resultWinTitle(solo.isHuman, displayName(solo), wonAmount),
-      explain: msg1,
-      lines: [{ player: solo, label: t.cardsNotShown, isWinner: true, hideCards: true, delta: wonAmount }]
+      title: (isSuperbluf && totalBonus > 0)
+        ? t.resultSuperblufTitle(solo.isHuman, displayName(solo), wonAmount + totalBonus)
+        : t.resultWinTitle(solo.isHuman, displayName(solo), wonAmount),
+      explain: (isSuperbluf && msgBluf) ? msgBluf : msg1,
+      lines: resultLines
     });
     return;
   }
